@@ -589,7 +589,8 @@ Implicit type conversions
 
 Suppose that instances of two types ``A`` and ``B`` are used in a project, and
 that an ``A`` can easily be converted into an instance of type ``B`` (examples of this
-could be a fixed and an arbitrary precision number type).
+could be a fixed and an arbitrary precision number type) through a ``B`` constructor
+that accepts an ``A`` instance:
 
 .. code-block:: cpp
 
@@ -604,23 +605,59 @@ could be a fixed and an arbitrary precision number type).
         [](const B &) { /* .... */ }
     );
 
-To invoke the function ``func`` using a variable ``a`` containing an ``A``
-instance, we'd have to write ``func(B(a))`` in Python. On the other hand, C++
-will automatically apply an implicit type conversion, which makes it possible
-to directly write ``func(a)``.
-
-In this situation (i.e. where ``B`` has a constructor that converts from
-``A``), the following statement enables similar implicit conversions on the
-Python side:
+In C++, implicit conversion allows defining implicit conversions between types
+so that ``func(a)``, where ``a`` is an ``A`` instance, will implicitly convert
+``a`` to a ``B`` instance.  In Python, however, with the above definitions we'd
+have to write ``func(B(a))``.  We can enable a similar implicit conversion on
+Python side by using the following statement:
 
 .. code-block:: cpp
 
     py::implicitly_convertible<A, B>();
 
+With this statement, our Python code can now call ``func(a)`` and have it
+treated as if we had written ``func(B(a))``.
+
 .. note::
 
     Implicit conversions from ``A`` to ``B`` only work when ``B`` is a custom
     data type that is exposed to Python via pybind11.
+
+    This statement does not use or even require C++ implicit conversion; it is
+    permitted for the implicit conversion to exist only in the pybind-declared
+    interface.
+
+It is sometimes also desirable to use internal C++ implicit conversions, in
+particular when registered pybind11 types can be implicitly converted to other
+types that do not have a pybind11-declared interface.  For example, the C++
+implementation of ``B`` might have an ``operator double()`` method that allows
+implicit conversion of ``B`` instances to ``double`` values.  In C++, this
+allow implicit conversion would allow ``B`` instances to be passed to functions
+accepting ``double`` values, as in this example:
+
+.. code-block:: cpp
+
+    m.def("square",
+        [](double v) { return v*v; });
+
+pybind11 needs to be told that such implicit conversions exist by using the
+following statement:
+
+.. code-block:: cpp
+
+    py::implicitly_cpp_convertible<B /* input type */, double /* output type */>();
+
+With this statement, our Python code can now call ``square(b)`` which will call
+square with the value obtained from the (C++) implicit conversion of ``b`` to a
+``double``.
+
+.. note::
+
+    Unlike ``py::implicitly_convertible``, the implicit conversion is always
+    carried out on the underlying C++ instances.  Be cautious about specifying
+    a pybind11-registered OutputType: no pybind11-registered constructors, or
+    holder types will be used when an declared implicit C++ conversion is
+    possible.
 
 .. _static_properties:
 

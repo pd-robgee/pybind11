@@ -36,6 +36,12 @@ from example import print_myobject3_2
 from example import print_myobject3_3
 from example import print_myobject3_4
 
+from example import print_double
+from example import print_string
+from example import Ex8_A
+from example import Ex8_B
+from example import Ex8_C
+
 for o in [make_object_1(), make_object_2(), MyObject1(3)]:
     print("Reference count = %i" % o.getRefCount())
     print_object_1(o)
@@ -68,3 +74,27 @@ for o in [MyObject3(9), make_myobject3_1(), make_myobject3_2()]:
     print_myobject3_2(o)
     print_myobject3_3(o)
     print_myobject3_4(o)
+
+# Implicit C++-level conversions: MyObject3 is C++ convertible to MyObject2:
+for o in [MyObject3(10), make_myobject3_1(), make_myobject3_2()]:
+    print_myobject2_1(o)
+# This won't work because they accept holder-type wrapped instances, which aren't eligible
+# for implicit C++ conversions
+#    print_myobject2_2(o)
+#    print_myobject2_2(o)
+#    print_myobject2_2(o)
+
+
+
+# Implicit C++-level conversion: MyObject 2 is convertible to double:
+for o in [MyObject2(8), make_myobject2_1(), make_myobject2_2()]:
+    print_double(o)
+
+# Ex8_A is declared cpp convertible to double; Ex8_B is a registered subclass of Ex8_A,
+# and Ex8_C is a registered subclass of Ex8_B.  All should be convertible to double
+# through Ex8_A's base class convertibility.
+print_double(Ex8_A()) # 42
+print_double(Ex8_B()) # 42
+print_double(Ex8_C()) # pi (overridden from A)
+
+print_string(Ex8_C())
