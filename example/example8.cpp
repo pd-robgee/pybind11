@@ -10,6 +10,7 @@
 
 #include "example.h"
 #include "object.h"
+#include <cmath>
 
 /// Custom object with builtin reference counting (see 'object.h' for the implementation)
 class MyObject1 : public Object {
