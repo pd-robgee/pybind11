@@ -138,43 +138,6 @@ inline PyThreadState *get_thread_state_unchecked() {
 #endif
 }
 
-// Attempts an implicit cpp conversion to the type with the given std::type_index.  Returns a void*
-// pointer to the allocated (but unmanaged!) new data, or nullptr if conversion failed.
-template <typename T> T* implicit_cpp_convert(const handle &src) {
-    std::type_index typeidx(typeid(T));
-    // Check if T is a registered C++ type; if it isn't, but it has a base class, try that, etc.,
-    // because src may not have a registered implicit converter, but one of its base classed might.
-    for (   detail::type_info *type = get_type_info((PyTypeObject *) src.get_type().ptr(), false);
-            type;
-            type = get_parent_type_info(type->type)) {
-
-        auto &conversions = type->implicit_cpp_conversions;
-        // It is, so now see if it has a declared implicit converter for T
-        auto it = conversions.find(typeidx);
-        if (it != conversions.end()) {
-            // It does, so extract the data pointer and do the explicit conversion
-            void *cppobj = ((instance<void> *) src.ptr())->value;
-            return (T*) it->second(cppobj);
-        }
-    }
-    return nullptr;
-}
-
-// Similar to the above, but moves or copies the converted object into the given reference then
-// destroys the original.  Requires that T be move- or copy-assignable.  Returns true if conversion
-// happened, false if not.
-template <typename T>
-typename std::enable_if<std::is_move_assignable<T>::value or std::is_copy_assignable<T>::value, bool>::type
-implicit_cpp_convert(T &store, const handle &src) {
-    if (T *converted = implicit_cpp_convert<T>(src)) {
-        store = std::move(*converted);
-        delete converted;
-        return true;
-    }
-    return false;
-}
-
-
 class type_caster_generic {
 public:
     PYBIND11_NOINLINE type_caster_generic(const std::type_info &type_info)
@@ -198,10 +161,7 @@ public:
     }
 
     PYBIND11_NOINLINE bool try_implicit_conversion(const handle &src) {
-        // First try implicit cpp conversion (if supported)
-        if (try_implicit_cpp_conversion(src)) return true;
-
-        // Otherwise walk through the implicit python conversions looking for one that works.
+        // Walk through the implicit python conversions looking for one that works.
         for (auto &converter : typeinfo->implicit_python_conversions) {
             temp = object(converter(src.ptr(), typeinfo->type), false);
             if (load(temp, false))
@@ -210,10 +170,6 @@ public:
 
         return false;
     }
-
-    // Virtual function called to attempt C++ implicit conversion.  This base version returns false;
-    // type_caster_generic_convertible overrides with an actual conversion.
-    PYBIND11_NOINLINE virtual bool try_implicit_cpp_conversion(const handle &) { return false; }
 
     PYBIND11_NOINLINE static handle cast(const void *_src, return_value_policy policy, handle parent,
                                          const std::type_info *type_info,
@@ -298,37 +254,12 @@ using cast_op_type = typename std::conditional<std::is_pointer<typename std::rem
     typename std::add_pointer<typename intrinsic_type<T>::type>::type,
     typename std::add_lvalue_reference<typename intrinsic_type<T>::type>::type>::type;
 
-// Base class used by type_caster_base when `type` is a valid C++ implicitly convertible type (which
-// requires a callable destructor and a move or copy constructor)
-template <typename type> class type_caster_generic_convertible : public type_caster_generic {
-public:
-    using type_caster_generic::type_caster_generic;
-
-    virtual bool try_implicit_cpp_conversion(const handle &src) override {
-        if (type *convptr = implicit_cpp_convert<type>(src)) {
-            // We get back an unmanaged pointer, so stash it in a local object unique_ptr
-            implicit_cpp_pointer.reset(convptr);
-            value = convptr;
-            return true;
-        }
-        return false;
-    }
-protected:
-    std::unique_ptr<type> implicit_cpp_pointer;
-};
-
-template <typename type> using type_caster_base_parent = typename std::conditional<
-    std::is_destructible<type>::value and
-    (std::is_move_constructible<type>::value or std::is_copy_constructible<type>::value),
-    type_caster_generic_convertible<type>, type_caster_generic>::type;
-
-/// Generic type caster for objects stored on the heap.  We inherit from type_caster_generic, but do
-/// so via type_caster_generic_convertible if `type` is potentially C++ convertible.
-template <typename type> class type_caster_base : public type_caster_base_parent<type> {
+/// Generic type caster for objects stored on the heap
+template <typename type> class type_caster_base : public type_caster_generic {
 public:
     static PYBIND11_DESCR name() { return type_descr(_<type>()); }
 
-    type_caster_base() : type_caster_base_parent<type>(typeid(type)) { }
+    type_caster_base() : type_caster_generic(typeid(type)) { }
 
     static handle cast(const type &src, return_value_policy policy, handle parent) {
         if (policy == return_value_policy::automatic || policy == return_value_policy::automatic_reference)
@@ -354,7 +285,6 @@ public:
     operator type&() { if (!value) throw reference_cast_error(); return *((type *) value); }
 
 protected:
-    using type_caster_generic::value;
     typedef void *(*Constructor)(const void *stream);
 #if !defined(_MSC_VER)
     /* Only enabled when the types are {copy,move}-constructible *and* when the type
@@ -414,7 +344,7 @@ struct type_caster<T, typename std::enable_if<std::is_arithmetic<T>::value>::typ
     typedef typename std::conditional<std::is_floating_point<T>::value, double, _py_type_1>::type py_type;
 public:
 
-    bool load(handle src, bool convert) {
+    bool load(handle src, bool) {
         py_type py_value;
 
         // First we try to convert the value directly to a T:
@@ -438,19 +368,10 @@ public:
                 py_value = (py_type) PYBIND11_LONG_AS_UNSIGNED_LONGLONG(src.ptr());
         }
 
-        if (py_value == (py_type) -1 && PyErr_Occurred()) {
-            // Conversion failed; try C++ implicit conversions:
-            if (convert and implicit_cpp_convert(value, src)) {
-                PyErr_Clear();
-                return true;
-            }
-
-            PyErr_Clear();
-            return false;
-        }
-        else if (std::is_integral<T>::value && sizeof(py_type) != sizeof(T) &&
+        if ((py_value == (py_type) -1 && PyErr_Occurred()) ||
+            (std::is_integral<T>::value && sizeof(py_type) != sizeof(T) &&
                (py_value < (py_type) std::numeric_limits<T>::min() ||
-                py_value > (py_type) std::numeric_limits<T>::max())) {
+                py_value > (py_type) std::numeric_limits<T>::max()))) {
             PyErr_Clear();
             return false;
         }
@@ -549,11 +470,10 @@ template <> class type_caster<std::nullptr_t> : public type_caster<void_type> { 
 
 template <> class type_caster<bool> {
 public:
-    bool load(handle src, bool convert) {
+    bool load(handle src, bool) {
         if (!src) return false;
         else if (src.ptr() == Py_True) { value = true; return true; }
         else if (src.ptr() == Py_False) { value = false; return true; }
-        else if (convert and implicit_cpp_convert(value, src)) return true;
         else return false;
     }
     static handle cast(bool src, return_value_policy /* policy */, handle /* parent */) {
@@ -564,13 +484,11 @@ public:
 
 template <> class type_caster<std::string> {
 public:
-    bool load(handle src, bool convert) {
+    bool load(handle src, bool) {
         object temp;
         handle load_src = src;
         if (!src) {
             return false;
-        } else if (convert and implicit_cpp_convert(value, src)) {
-            return true;
         } else if (PyUnicode_Check(load_src.ptr())) {
             temp = object(PyUnicode_AsUTF8String(load_src.ptr()), false);
             if (!temp) { PyErr_Clear(); return false; }  // UnicodeEncodeError
@@ -607,13 +525,11 @@ public:
 
 template <> class type_caster<std::wstring> {
 public:
-    bool load(handle src, bool convert) {
+    bool load(handle src, bool) {
         object temp;
         handle load_src = src;
         if (!src) {
             return false;
-        } else if (convert and implicit_cpp_convert(value, src)) {
-            return true;
         } else if (!PyUnicode_Check(load_src.ptr())) {
             temp = object(PyUnicode_FromObject(load_src.ptr()), false);
             if (!temp) { PyErr_Clear(); return false; }
@@ -735,6 +651,58 @@ protected:
     type_caster<typename intrinsic_type<T2>::type> second;
 };
 
+// Attempts an implicit cpp conversion to the type with the given std::type_index.  If it works,
+// sets the given T* to the new object and returns true.  Otherwise leaves the pointer alone
+// and returns false.
+template <typename T> bool implicit_cpp_convert(T *&ptr, handle src) {
+    std::type_index typeidx(typeid(T));
+    // Check if T is a registered C++ conversion for src; if it isn't, but src has a base class, try that, etc.,
+    // because src may not have a registered implicit converter, but one of its base classes might.
+    for (   detail::type_info *type = get_type_info((PyTypeObject *) src.get_type().ptr(), false);
+            type;
+            type = get_parent_type_info(type->type)) {
+
+        auto &conversions = type->implicit_cpp_conversions;
+        // It is, so now see if it has a declared implicit converter for T
+        auto it = conversions.find(typeidx);
+        if (it != conversions.end()) {
+            // It does, so extract the data pointer and do the explicit conversion
+            void *cppobj = ((instance<void> *) src.ptr())->value;
+            ptr = (T*) it->second(cppobj);
+            return true;
+        }
+    }
+    return false;
+}
+// Base class for non-destructible types.  We don't use this, but we need ptr and get() to exist
+// (they won't be touched at run-time, because we only allow implicit conversion for destructible
+// types).
+template <typename T, typename SFINAE = void> struct implicit_caster {
+    T *ptr = nullptr;
+    template <typename W> W get() {
+        throw std::logic_error("pybind11 bug: this should not be called."); }
+};
+// Destructible types: we also manage the T pointer, destroying it during our destruction.
+template <typename T> struct implicit_caster<T, typename std::enable_if<std::is_destructible<T>::value>::type> {
+    T *ptr = nullptr;
+// Disable GCC polymorphic destructor warning: when ptr is set it's an actual instance, not a base
+// class pointer.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdelete-non-virtual-dtor"
+    ~implicit_caster() {
+        if (ptr) delete ptr;
+    }
+#pragma GCC diagnostic pop
+    template <typename W> static constexpr bool same_pointer = std::is_same<typename intrinsic_type<W>::type, T>::value and std::is_pointer<W>::value;
+    template <typename W> static constexpr bool same_lvaluer = std::is_same<typename intrinsic_type<W>::type, T>::value and std::is_lvalue_reference<W>::value;
+    // We only apply implicit conversion when the type is a pointer or lvalue; the other get() is
+    // needed for the code to compile with non-convertible types, so won't actually be called.
+    template <typename W> typename std::enable_if<same_pointer<W>, W>::type get() { return ptr; }
+    template <typename W> typename std::enable_if<same_lvaluer<W>, W>::type get() { return *ptr; }
+    template <typename W> typename std::enable_if<not same_pointer<W> and not same_lvaluer<W>, W>::type get() {
+        throw std::logic_error("pybind11 bug: this should not be called."); }
+};
+
 template <typename... Tuple> class type_caster<std::tuple<Tuple...>> {
     typedef std::tuple<Tuple...> type;
     typedef std::tuple<typename intrinsic_type<Tuple>::type...> itype;
@@ -800,8 +768,14 @@ public:
 
 protected:
     template <typename ReturnValue, typename Func, size_t ... Index> ReturnValue call(Func &&f, index_sequence<Index...>) {
-        return f(std::get<Index>(value)
-            .operator typename type_caster<typename intrinsic_type<Tuple>::type>::template cast_op_type<Tuple>()...);
+        return f(
+            (std::get<Index>(implicit_converted).ptr != nullptr
+                ? std::get<Index>(implicit_converted).template get<
+                    typename type_caster<typename intrinsic_type<Tuple>::type>::template cast_op_type<Tuple>
+                    >()
+                : std::get<Index>(value)
+                    .operator typename type_caster<typename intrinsic_type<Tuple>::type>::template cast_op_type<Tuple>()
+            )...);
     }
 
     template <size_t ... Index> type cast(index_sequence<Index...>) {
@@ -810,8 +784,14 @@ protected:
     }
 
     template <size_t ... Indices> bool load(handle src, bool convert, index_sequence<Indices...>) {
+        std::array<PyObject *, size> ptrs {{ PyTuple_GET_ITEM(src.ptr(), Indices)... }};
         std::array<bool, size> success {{
-            std::get<Indices>(value).load(PyTuple_GET_ITEM(src.ptr(), Indices), convert)...
+            (
+                std::get<Indices>(value).load(ptrs[Indices], convert)
+                // If basic conversion fails, try registered implicit cpp conversion:
+                ||
+                implicit_cpp_convert(std::get<Indices>(implicit_converted).ptr, ptrs[Indices])
+            )...
         }};
         (void) convert; /* avoid a warning when the tuple is empty */
         for (bool r : success)
@@ -837,6 +817,7 @@ protected:
 
 protected:
     std::tuple<type_caster<typename intrinsic_type<Tuple>::type>...> value;
+    std::tuple<implicit_caster<typename intrinsic_type<Tuple>::type>...> implicit_converted;
 };
 
 /// Type caster for holder types like std::shared_ptr, etc.
@@ -845,10 +826,9 @@ public:
     using type_caster_base<type>::cast;
     using type_caster_base<type>::typeinfo;
     using type_caster_base<type>::value;
-    using type_caster_base<type>::temp;
     using type_caster_base<type>::try_implicit_conversion;
 
-    virtual bool load(handle src, bool convert) override {
+    bool load(handle src, bool convert) override {
         if (!src || !typeinfo) {
             return false;
         } else if (src.ptr() == Py_None) {
@@ -866,9 +846,6 @@ public:
 
         return false;
     }
-
-    // Don't do implicit cpp conversion for holder-wrapped types:
-    virtual bool try_implicit_cpp_conversion(const handle &) override { return false; }
 
     explicit operator type*() { return this->value; }
     explicit operator type&() { return *(this->value); }
