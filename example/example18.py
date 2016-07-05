@@ -17,7 +17,7 @@ from example import print_ex18f
 # and Ex18_C is a registered subclass of Ex18_B.  All should be convertible to double
 # through Ex18_A's base class convertibility.
 print_double(Ex18_A()) # 42
-print_double(Ex18_A((5 ** (1/2) + 1) / 2)) # Phi = 1.6180339...
+print_double(Ex18_A((5 ** (1/2.0) + 1) / 2)) # Phi = 1.6180339...
 print_double(Ex18_B()) # 42 (via Ex18_A's conversion operator)
 print_double(Ex18_C()) # pi (overridden from A's double conv op)
 print_string(Ex18_C()) # the string "pi"
