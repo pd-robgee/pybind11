@@ -1082,7 +1082,8 @@ implicitly_cpp_convertible(detail::type_info &input_type) {
                 // conversion value and moves/copies the converted value into it, returning a pointer.
                 // Returns nullptr if input is nullptr.  The caller is responsible for destruction.
                 if (not input) return nullptr;
-                return new OutputType(static_cast<OutputType>(*reinterpret_cast<InputType*>(input)));
+                OutputType t = *reinterpret_cast<InputType*>(input);
+                return new OutputType(std::move(t));
             });
 }
 template <typename InputType, typename OutputType>
