@@ -140,7 +140,7 @@ public:
     PYBIND11_NOINLINE type_caster_generic(const std::type_info &type_info)
      : typeinfo(get_type_info(type_info)) { }
 
-    PYBIND11_NOINLINE virtual bool load(handle src, bool convert) {
+    PYBIND11_NOINLINE bool load(handle src, bool convert) {
         if (!src || !typeinfo)
             return false;
         if (src.ptr() == Py_None) {
@@ -151,18 +151,13 @@ public:
             return true;
         }
 
-        if (convert && try_implicit_conversion(src))
-            return true;
-
-        return false;
-    }
-
-    PYBIND11_NOINLINE bool try_implicit_conversion(const handle &src) {
-        // Walk through the implicit python conversions looking for one that works.
-        for (auto &converter : typeinfo->implicit_python_conversions) {
-            temp = object(converter(src.ptr(), typeinfo->type), false);
-            if (load(temp, false))
-                return true;
+        if (convert) {
+            // Walk through the implicit python conversions looking for one that works.
+            for (auto &converter : typeinfo->implicit_python_conversions) {
+                temp = object(converter(src.ptr(), typeinfo->type), false);
+                if (load(temp, false))
+                    return true;
+            }
         }
 
         return false;
@@ -826,9 +821,9 @@ public:
     using type_caster_base<type>::cast;
     using type_caster_base<type>::typeinfo;
     using type_caster_base<type>::value;
-    using type_caster_base<type>::try_implicit_conversion;
+    using type_caster_base<type>::temp;
 
-    bool load(handle src, bool convert) override {
+    bool load(handle src, bool convert) {
         if (!src || !typeinfo) {
             return false;
         } else if (src.ptr() == Py_None) {
@@ -841,8 +836,14 @@ public:
             return true;
         }
 
-        if (convert && try_implicit_conversion(src))
-            return true;
+        if (convert) {
+            // Walk through the implicit python conversions looking for one that works.
+            for (auto &converter : typeinfo->implicit_python_conversions) {
+                temp = object(converter(src.ptr(), typeinfo->type), false);
+                if (load(temp, false))
+                    return true;
+            }
+        }
 
         return false;
     }
