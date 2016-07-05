@@ -132,7 +132,7 @@ void init_ex18(py::module &m) {
     // pybind11 that the type is convertible to F before registering F:
     py::implicitly_convertible<Ex18_A, Ex18_F>();
 
-    py::class_<Ex18_F> f(m, "Ex18_F", f);
+    py::class_<Ex18_F> f(m, "Ex18_F");
     // We allow Ex18_F to be constructed in Python, but don't provide a conversion constructor from
     // Ex18_A.  C++ has an implicit one, however, that we told pybind11 about above.  In practice
     // this means we are allowed to pass Ex18_A instances to functions taking Ex18_F arguments, but
