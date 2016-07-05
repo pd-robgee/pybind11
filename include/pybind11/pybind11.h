@@ -1064,60 +1064,63 @@ template <typename Type, typename... Extra> iterator make_iterator(Type &value, 
     return make_iterator(std::begin(value), std::end(value), extra...);
 }
 
-template <typename InputType, typename OutputType> void implicitly_convertible() {
-    auto implicit_caster = [](PyObject *obj, PyTypeObject *type) -> PyObject * {
-        if (!detail::type_caster<InputType>().load(obj, false))
-            return nullptr;
-        tuple args(1);
-        args[0] = obj;
-        PyObject *result = PyObject_Call((PyObject *) type, args.ptr(), nullptr);
-        if (result == nullptr)
-            PyErr_Clear();
-        return result;
-    };
-    // Ensure that we haven't registered a C++-level InputType => OutputType implicit conversion
-    auto *input_type = detail::get_type_info(typeid(InputType));
-    if (input_type and input_type->implicit_cpp_conversions.count(std::type_index(typeid(OutputType))))
-        pybind11_fail(
-                "implicitly_convertible: " + type_id<InputType>() + " to " + type_id<OutputType>() +
-                " conversion was already defined via implicitly_cpp_convertible");
+NAMESPACE_BEGIN(detail)
+// These have to be separated like this because the lambda in the proper version won't compile if
+// the C++ types aren't implicitly convertible.
+template <typename InputType, typename OutputType>
+typename std::enable_if<std::is_convertible<InputType, OutputType>::value>::type
+implicitly_cpp_convertible(detail::type_info &input_type) {
+    // Some validity checks on output type:
+    if (not std::is_destructible<OutputType>::value)
+        pybind11_fail("implicitly_convertible: " + type_id<OutputType>() + " is not destructible");
+    if (not std::is_move_constructible<OutputType>::value and not std::is_copy_constructible<OutputType>::value)
+        pybind11_fail("implicitly_convertible: " + type_id<OutputType>() + " is not move- or copy-constructible");
 
-    auto *output_type = detail::get_type_info(typeid(OutputType));
-    if (!output_type)
-        pybind11_fail("implicitly_convertible: output type " + type_id<OutputType>() + " is not a pybind11-registered type");
-
-    output_type->known_implicit_python_conversions.emplace(std::type_index(typeid(InputType)));
-    output_type->implicit_python_conversions.push_back(implicit_caster);
+    input_type.implicit_cpp_conversions.emplace(std::type_index(typeid(OutputType)),
+            [](void *input) -> void * {
+                // Takes a pointer to the InputType object, allocates an OutputType with the implicit
+                // conversion value and moves/copies the converted value into it, returning a pointer.
+                // Returns nullptr if input is nullptr.  The caller is responsible for destruction.
+                if (not input) return nullptr;
+                return new OutputType(static_cast<OutputType>(*reinterpret_cast<InputType*>(input)));
+            });
 }
+template <typename InputType, typename OutputType>
+typename std::enable_if<not std::is_convertible<InputType, OutputType>::value>::type
+implicitly_cpp_convertible(detail::type_info &) {
+    pybind11_fail("implicitly_convertible: C++ implicit conversion from " + type_id<InputType>() +
+            " to " + type_id<OutputType>() + " is not valid");
+}
+NAMESPACE_END(detail)
 
-// This tells pybind11 that it is allowed to use C++ implicit conversion.  Only callable when:
-template <typename InputType, typename OutputType> void implicitly_cpp_convertible() {
-    static_assert(std::is_destructible<OutputType>::value,
-            "OutputType is not destructible");
-    static_assert(std::is_move_constructible<OutputType>::value or std::is_copy_constructible<OutputType>::value,
-            "OutputType is not move- or copy-constructible");
-    static_assert(std::is_convertible<InputType, OutputType>::value,
-            "OutputType is not implicitly convertible to InputType");
-
+template <typename InputType, typename OutputType> void implicitly_convertible() {
     auto *output_type = detail::get_type_info(typeid(OutputType));
-    if (output_type and output_type->known_implicit_python_conversions.count(std::type_index(typeid(InputType))))
-        pybind11_fail(
-                "implicitly_cpp_convertible: " + type_id<InputType>() + " to " + type_id<OutputType>() +
-                " conversion was already defined via implicitly_convertible");
+    if (output_type) {
+        // Implicit conversion to a registered type, via registered constructors
+        if (!output_type)
+            pybind11_fail("implicitly_convertible: output type " + type_id<OutputType>() + " is not a pybind11-registered type");
 
-    auto *input_type = detail::get_type_info(typeid(InputType));
-    if (!input_type)
-        pybind11_fail("implicitly_convertible_cpp: input type " + type_id<InputType>() + " is not a pybind11-registered type");
+        output_type->implicit_python_conversions.push_back([](PyObject *obj, PyTypeObject *type) -> PyObject * {
+            if (!detail::type_caster<InputType>().load(obj, false))
+                return nullptr;
+            tuple args(1);
+            args[0] = obj;
+            PyObject *result = PyObject_Call((PyObject *) type, args.ptr(), nullptr);
+            if (result == nullptr)
+                PyErr_Clear();
+            return result;
+        });
+    }
+    else {
+        // Otherwise our OutputType is an unregistered type: require InputType to be registered,
+        // because otherwise this is pointless.
+        auto *input_type = detail::get_type_info(typeid(InputType));
+        if (!input_type)
+            pybind11_fail("implicitly_convertible: input type " + type_id<InputType>() + " is not a pybind11-registered type");
 
-    auto implicit_converter = [](void *input) -> void * {
-        // Takes a pointer to the InputType object, allocates an OutputType with the implicit
-        // conversion value and moves/copies the converted value into it, returning a pointer.
-        // Returns nullptr if input is nullptr.  The caller is responsible for destruction.
-        if (not input) return nullptr;
-        return new OutputType(static_cast<OutputType>(*reinterpret_cast<InputType*>(input)));
-    };
+        detail::implicitly_cpp_convertible<InputType, OutputType>(*input_type);
 
-    input_type->implicit_cpp_conversions.emplace(std::type_index(typeid(OutputType)), implicit_converter);
+    }
 }
 
 

@@ -27,9 +27,6 @@ struct type_info {
     void (*init_holder)(PyObject *, const void *);
     // Implicit conversions from other types to this type via declared Python constructor
     std::vector<PyObject *(*)(PyObject *, PyTypeObject *) > implicit_python_conversions;
-    // Track the known conversions to give an error if attempting to define both a python
-    // and cpp implicit converter for the same type pair:
-    std::unordered_set<std::type_index> known_implicit_python_conversions;
     // Implicit C++-level conversions from this type to other types
     std::unordered_map<std::type_index, void *(*)(void *)>
         implicit_cpp_conversions;
