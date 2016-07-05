@@ -344,7 +344,6 @@ public:
     bool load(handle src, bool) {
         py_type py_value;
 
-        // First we try to convert the value directly to a T:
         if (!src) {
             return false;
         } if (std::is_floating_point<T>::value) {
