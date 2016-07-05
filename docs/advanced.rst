@@ -655,6 +655,11 @@ With this registration in place, our python code can now call ``square(a)`` and
 call the functions with a ``double`` and a ``PrivateType`` (where PrivateType
 is not exposed via pybind11).
 
+.. seealso::
+
+    The file :file:`example/example18.cpp` contains a complete example that
+    demonstrates how to use implicit conversions in more detail.
+
 .. _static_properties:
 
 Static properties

@@ -1,0 +1,45 @@
+Ex18_A double conversion operator
+42
+Ex18_A double conversion operator
+1.61803
+Ex18_A double conversion operator
+42
+3.14159
+pi
+2.71828
+e
+Ex18_B @ 0x160a1a0 Ex18_E conversion operator
+Ex18_A double conversion operator
+Ex18_E @ 0x7fff05c4f688 double constructor
+Ex18_E @ 0x160b400 move constructor
+Ex18_E @ 0x7fff05c4f688 destructor
+Ex18_E double conversion operator
+84
+Ex18_E @ 0x160b400 destructor
+Ex18_B @ 0x1609270 Ex18_E conversion operator
+Ex18_E @ 0x7fff05c4f688 double constructor
+Ex18_E @ 0x160b400 move constructor
+Ex18_E @ 0x7fff05c4f688 destructor
+Ex18_E double conversion operator
+6.28319
+Ex18_E @ 0x160b400 destructor
+Ex18_E @ 0x7fff05c4f688 implicit Ex18_D constructor
+Ex18_E @ 0x160b400 move constructor
+Ex18_E @ 0x7fff05c4f688 destructor
+Ex18_E double conversion operator
+8.15485
+Ex18_E @ 0x160b400 destructor
+Ex18_F @ 0x1609270 default constructor
+99
+Ex18_F @ 0x1609270 destructor
+Ex18_A double conversion operator
+Ex18_F @ 0x7fff05c4f668 Ex18_A conversion constructor
+Ex18_F @ 0x160b400 copy constructor
+Ex18_F @ 0x7fff05c4f668 destructor
+250
+Ex18_F @ 0x160b400 destructor
+Ex18_F @ 0x7fff05c4f668 Ex18_A conversion constructor
+Ex18_F @ 0x160b400 copy constructor
+Ex18_F @ 0x7fff05c4f668 destructor
+3141.59
+Ex18_F @ 0x160b400 destructor

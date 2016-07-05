@@ -1,200 +1,169 @@
-MyObject1[1] @ 0x1c4c010 constructor
-Initialized ref from pointer 0x1c4c010
-MyObject1[2] @ 0x1d1d800 constructor
-Initialized ref from pointer 0x1d1d800
-Initialized ref from ref 0x1d1d800
-Destructing ref 0x1d1d800
-MyObject1[3] @ 0x1d241f0 constructor
-Initialized ref from pointer 0x1d241f0
+MyObject1[1] @ 0x188e8c0 constructor
+Initialized ref from pointer 0x188e8c0
+MyObject1[2] @ 0x19b9860 constructor
+Initialized ref from pointer 0x19b9860
+Initialized ref from ref 0x19b9860
+Destructing ref 0x19b9860
+MyObject1[3] @ 0x19bae60 constructor
+Initialized ref from pointer 0x19bae60
 MyObject1[1]
 Created empty ref
-Assigning ref 0x1c4c010
-Initialized ref from ref 0x1c4c010
+Assigning ref 0x188e8c0
+Initialized ref from ref 0x188e8c0
 MyObject1[1]
-Destructing ref 0x1c4c010
-Destructing ref 0x1c4c010
+Destructing ref 0x188e8c0
+Destructing ref 0x188e8c0
 Created empty ref
-Assigning ref 0x1c4c010
+Assigning ref 0x188e8c0
 MyObject1[1]
-Destructing ref 0x1c4c010
+Destructing ref 0x188e8c0
 Created empty ref
-Assigning ref 0x1c4c010
+Assigning ref 0x188e8c0
 MyObject1[1]
-Destructing ref 0x1c4c010
+Destructing ref 0x188e8c0
 MyObject1[2]
 Created empty ref
-Assigning ref 0x1d1d800
-Initialized ref from ref 0x1d1d800
+Assigning ref 0x19b9860
+Initialized ref from ref 0x19b9860
 MyObject1[2]
-Destructing ref 0x1d1d800
-Destructing ref 0x1d1d800
+Destructing ref 0x19b9860
+Destructing ref 0x19b9860
 Created empty ref
-Assigning ref 0x1d1d800
+Assigning ref 0x19b9860
 MyObject1[2]
-Destructing ref 0x1d1d800
+Destructing ref 0x19b9860
 Created empty ref
-Assigning ref 0x1d1d800
+Assigning ref 0x19b9860
 MyObject1[2]
-Destructing ref 0x1d1d800
+Destructing ref 0x19b9860
 MyObject1[3]
 Created empty ref
-Assigning ref 0x1d241f0
-Initialized ref from ref 0x1d241f0
+Assigning ref 0x19bae60
+Initialized ref from ref 0x19bae60
 MyObject1[3]
-Destructing ref 0x1d241f0
-Destructing ref 0x1d241f0
+Destructing ref 0x19bae60
+Destructing ref 0x19bae60
 Created empty ref
-Assigning ref 0x1d241f0
+Assigning ref 0x19bae60
 MyObject1[3]
-Destructing ref 0x1d241f0
+Destructing ref 0x19bae60
 Created empty ref
-Assigning ref 0x1d241f0
+Assigning ref 0x19bae60
 MyObject1[3]
-Destructing ref 0x1d241f0
-Destructing ref 0x1d1d800
-MyObject1[2] @ 0x1d1d800 destructor
-Destructing ref 0x1c4c010
-MyObject1[1] @ 0x1c4c010 destructor
-MyObject1[4] @ 0x1d1d800 constructor
-Initialized ref from pointer 0x1d1d800
-MyObject1[5] @ 0x1d24100 constructor
-Initialized ref from pointer 0x1d24100
-Initialized ref from ref 0x1d24100
-Destructing ref 0x1d24100
-MyObject1[6] @ 0x1d24140 constructor
-Initialized ref from pointer 0x1d24140
-Destructing ref 0x1d241f0
-MyObject1[3] @ 0x1d241f0 destructor
+Destructing ref 0x19bae60
+Destructing ref 0x19b9860
+MyObject1[2] @ 0x19b9860 destructor
+Destructing ref 0x188e8c0
+MyObject1[1] @ 0x188e8c0 destructor
+MyObject1[4] @ 0x19b9860 constructor
+Initialized ref from pointer 0x19b9860
+MyObject1[5] @ 0x19bad70 constructor
+Initialized ref from pointer 0x19bad70
+Initialized ref from ref 0x19bad70
+Destructing ref 0x19bad70
+MyObject1[6] @ 0x19badb0 constructor
+Initialized ref from pointer 0x19badb0
+Destructing ref 0x19bae60
+MyObject1[3] @ 0x19bae60 destructor
 MyObject1[4]
 Created empty ref
-Assigning ref 0x1d1d800
-Initialized ref from ref 0x1d1d800
+Assigning ref 0x19b9860
+Initialized ref from ref 0x19b9860
 MyObject1[4]
-Destructing ref 0x1d1d800
-Destructing ref 0x1d1d800
+Destructing ref 0x19b9860
+Destructing ref 0x19b9860
 Created empty ref
-Assigning ref 0x1d1d800
+Assigning ref 0x19b9860
 MyObject1[4]
-Destructing ref 0x1d1d800
+Destructing ref 0x19b9860
 Created empty ref
-Assigning ref 0x1d1d800
+Assigning ref 0x19b9860
 MyObject1[4]
-Destructing ref 0x1d1d800
+Destructing ref 0x19b9860
 MyObject1[4]
 Created empty ref
-Assigning ref 0x1d1d800
-Initialized ref from ref 0x1d1d800
+Assigning ref 0x19b9860
+Initialized ref from ref 0x19b9860
 MyObject1[4]
-Destructing ref 0x1d1d800
-Destructing ref 0x1d1d800
+Destructing ref 0x19b9860
+Destructing ref 0x19b9860
 Created empty ref
-Assigning ref 0x1d1d800
+Assigning ref 0x19b9860
 MyObject1[4]
-Destructing ref 0x1d1d800
+Destructing ref 0x19b9860
 Created empty ref
-Assigning ref 0x1d1d800
+Assigning ref 0x19b9860
 MyObject1[4]
-Destructing ref 0x1d1d800
+Destructing ref 0x19b9860
 MyObject1[5]
 Created empty ref
-Assigning ref 0x1d24100
-Initialized ref from ref 0x1d24100
+Assigning ref 0x19bad70
+Initialized ref from ref 0x19bad70
 MyObject1[5]
-Destructing ref 0x1d24100
-Destructing ref 0x1d24100
+Destructing ref 0x19bad70
+Destructing ref 0x19bad70
 Created empty ref
-Assigning ref 0x1d24100
+Assigning ref 0x19bad70
 MyObject1[5]
-Destructing ref 0x1d24100
+Destructing ref 0x19bad70
 Created empty ref
-Assigning ref 0x1d24100
+Assigning ref 0x19bad70
 MyObject1[5]
-Destructing ref 0x1d24100
+Destructing ref 0x19bad70
 MyObject1[5]
 Created empty ref
-Assigning ref 0x1d24100
-Initialized ref from ref 0x1d24100
+Assigning ref 0x19bad70
+Initialized ref from ref 0x19bad70
 MyObject1[5]
-Destructing ref 0x1d24100
-Destructing ref 0x1d24100
+Destructing ref 0x19bad70
+Destructing ref 0x19bad70
 Created empty ref
-Assigning ref 0x1d24100
+Assigning ref 0x19bad70
 MyObject1[5]
-Destructing ref 0x1d24100
+Destructing ref 0x19bad70
 Created empty ref
-Assigning ref 0x1d24100
+Assigning ref 0x19bad70
 MyObject1[5]
-Destructing ref 0x1d24100
+Destructing ref 0x19bad70
 MyObject1[6]
 Created empty ref
-Assigning ref 0x1d24140
-Initialized ref from ref 0x1d24140
+Assigning ref 0x19badb0
+Initialized ref from ref 0x19badb0
 MyObject1[6]
-Destructing ref 0x1d24140
-Destructing ref 0x1d24140
+Destructing ref 0x19badb0
+Destructing ref 0x19badb0
 Created empty ref
-Assigning ref 0x1d24140
+Assigning ref 0x19badb0
 MyObject1[6]
-Destructing ref 0x1d24140
+Destructing ref 0x19badb0
 Created empty ref
-Assigning ref 0x1d24140
+Assigning ref 0x19badb0
 MyObject1[6]
-Destructing ref 0x1d24140
+Destructing ref 0x19badb0
 MyObject1[6]
 Created empty ref
-Assigning ref 0x1d24140
-Initialized ref from ref 0x1d24140
+Assigning ref 0x19badb0
+Initialized ref from ref 0x19badb0
 MyObject1[6]
-Destructing ref 0x1d24140
-Destructing ref 0x1d24140
+Destructing ref 0x19badb0
+Destructing ref 0x19badb0
 Created empty ref
-Assigning ref 0x1d24140
+Assigning ref 0x19badb0
 MyObject1[6]
-Destructing ref 0x1d24140
+Destructing ref 0x19badb0
 Created empty ref
-Assigning ref 0x1d24140
+Assigning ref 0x19badb0
 MyObject1[6]
-Destructing ref 0x1d24140
-MyObject1[7] @ 0x1d21cd0 constructor
-Initialized ref from pointer 0x1d21cd0
-MyObject1[7]
-Destructing ref 0x1d21cd0
-MyObject1[7] @ 0x1d21cd0 destructor
-Created empty ref
-MyObject1[7] @ 0x1d24290 constructor
-Initialized ref from pointer 0x1d24290
-Assigning ref 0x1d24290
-Initialized ref from ref 0x1d24290
-MyObject1[7]
-Destructing ref 0x1d24290
-Destructing ref 0x1d24290
-Destructing ref 0x1d24290
-MyObject1[7] @ 0x1d24290 destructor
-Created empty ref
-MyObject1[7] @ 0x1d21cd0 constructor
-Initialized ref from pointer 0x1d21cd0
-Assigning ref 0x1d21cd0
-MyObject1[7]
-Destructing ref 0x1d21cd0
-Destructing ref 0x1d21cd0
-MyObject1[7] @ 0x1d21cd0 destructor
-Created empty ref
-MyObject1[7] @ 0x1d24290 constructor
-Initialized ref from pointer 0x1d24290
-Assigning ref 0x1d24290
-MyObject1[7]
-Destructing ref 0x1d24290
-Destructing ref 0x1d24290
-MyObject1[7] @ 0x1d24290 destructor
-Destructing ref 0x1d24140
-MyObject1[6] @ 0x1d24140 destructor
-Destructing ref 0x1d24100
-MyObject1[5] @ 0x1d24100 destructor
-Destructing ref 0x1d1d800
-MyObject1[4] @ 0x1d1d800 destructor
-MyObject2[8] @ 0x1d1d800 constructor
-MyObject2[6] @ 0x1d24140 constructor
-MyObject2[7] @ 0x1d21d00 constructor
+Destructing ref 0x19badb0
+Destructing ref 0x19bad70
+MyObject1[5] @ 0x19bad70 destructor
+Destructing ref 0x19b9860
+MyObject1[4] @ 0x19b9860 destructor
+MyObject2[8] @ 0x1931c80 constructor
+MyObject2[6] @ 0x19bad70 constructor
+MyObject2[7] @ 0x19bab20 constructor
+Destructing ref 0x19badb0
+MyObject1[6] @ 0x19badb0 destructor
 MyObject2[8]
 MyObject2[8]
 MyObject2[8]
@@ -207,12 +176,12 @@ MyObject2[7]
 MyObject2[7]
 MyObject2[7]
 MyObject2[7]
-MyObject2[6] @ 0x1d24140 destructor
-MyObject2[8] @ 0x1d1d800 destructor
-MyObject3[9] @ 0x1d23ea0 constructor
-MyObject3[8] @ 0x1d24160 constructor
-MyObject3[9] @ 0x1d24300 constructor
-MyObject2[7] @ 0x1d21d00 destructor
+MyObject2[6] @ 0x19bad70 destructor
+MyObject2[8] @ 0x1931c80 destructor
+MyObject3[9] @ 0x19badd0 constructor
+MyObject3[8] @ 0x19bae60 constructor
+MyObject3[9] @ 0x1931cb0 constructor
+MyObject2[7] @ 0x19bab20 destructor
 MyObject3[9]
 MyObject3[9]
 MyObject3[9]
@@ -225,53 +194,18 @@ MyObject3[9]
 MyObject3[9]
 MyObject3[9]
 MyObject3[9]
-MyObject3[8] @ 0x1d24160 destructor
-MyObject3[9] @ 0x1d23ea0 destructor
-MyObject3[10] @ 0x1d23ea0 constructor
-MyObject3[8] @ 0x1d24160 constructor
-MyObject3[9] @ 0x1c69550 constructor
-MyObject3[9] @ 0x1d24300 destructor
-MyObject2[40] @ 0x7ffc36006cf0 constructor
-MyObject2[40] @ 0x1d24290 copy constructor
-MyObject2[40] @ 0x7ffc36006cf0 destructor
-MyObject2[40]
-MyObject2[40] @ 0x1d24290 destructor
-MyObject2[32] @ 0x7ffc36006cf0 constructor
-MyObject2[32] @ 0x1d24290 copy constructor
-MyObject2[32] @ 0x7ffc36006cf0 destructor
-MyObject2[32]
-MyObject2[32] @ 0x1d24290 destructor
-MyObject2[36] @ 0x7ffc36006cf0 constructor
-MyObject2[36] @ 0x1d24290 copy constructor
-MyObject2[36] @ 0x7ffc36006cf0 destructor
-MyObject2[36]
-MyObject2[36] @ 0x1d24290 destructor
-MyObject3[8] @ 0x1d24160 destructor
-MyObject3[10] @ 0x1d23ea0 destructor
-MyObject2[8] @ 0x1d242b0 constructor
-MyObject2[6] @ 0x1d1d800 constructor
-MyObject2[7] @ 0x1d23eb0 constructor
-MyObject3[9] @ 0x1c69550 destructor
-2.82843
-2.44949
-2.64575
-MyObject2[6] @ 0x1d1d800 destructor
-MyObject2[8] @ 0x1d242b0 destructor
-42
-42
-3.14159
-Pi
+MyObject3[8] @ 0x19bae60 destructor
+MyObject3[9] @ 0x19badd0 destructor
 Reference count = 1
 Reference count = 1
 Reference count = 1
-<example.MyObject1 object at 0x7f5a84eea5e0>
-<example.MyObject1 object at 0x7f5a84eea618>
-<example.MyObject1 object at 0x7f5a83a6d880>
-7
-<example.MyObject2 object at 0x7f5a83a6ebf0>
-<example.MyObject2 object at 0x7f5a84ef74b0>
-<example.MyObject2 object at 0x7f5a84ef7430>
-<example.MyObject3 object at 0x7f5a83a6ebf0>
-<example.MyObject3 object at 0x7f5a84ef74b0>
-<example.MyObject3 object at 0x7f5a84ef7470>
-MyObject2[7] @ 0x1d23eb0 destructor
+<example.MyObject1 object at 0x7f75fb802b58>
+<example.MyObject1 object at 0x7f75fd4ec378>
+<example.MyObject1 object at 0x7f75fb81b618>
+<example.MyObject2 object at 0x7f75fd4f73b0>
+<example.MyObject2 object at 0x7f75fd4f7330>
+<example.MyObject2 object at 0x7f75fd4f7230>
+<example.MyObject3 object at 0x7f75fd4f73b0>
+<example.MyObject3 object at 0x7f75fd4f7330>
+<example.MyObject3 object at 0x7f75fd4f7370>
+MyObject3[9] @ 0x1931cb0 destructor
