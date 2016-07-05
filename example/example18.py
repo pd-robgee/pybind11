@@ -19,7 +19,7 @@ from example import print_ex18f
 print_double(Ex18_A()) # 42
 print_double(Ex18_A((5 ** (1/2) + 1) / 2)) # Phi = 1.6180339...
 print_double(Ex18_B()) # 42 (via Ex18_A's conversion operator)
-print_double(Ex18_C()) # π (overridden from A's double conv op)
+print_double(Ex18_C()) # pi (overridden from A's double conv op)
 print_string(Ex18_C()) # the string "pi"
 print_double(Ex18_D()) # e (overridden from A's double conv op)
 print_string(Ex18_D()) # "e"
@@ -36,7 +36,7 @@ print_ex18e(Ex18_D()) # 8.15485 (3*e)
 
 print_ex18f(Ex18_F()) # 99
 print_ex18f(Ex18_A(0.25)) # 250, via C++ implicit conversion
-print_ex18f(Ex18_C()) # 1000π = 3141.59, via C++ implicit conversion
+print_ex18f(Ex18_C()) # 1000pi = 3141.59, via C++ implicit conversion
 try:
     print_ex18f(Ex18_F(Ex18_A(4)))
     print("BAD: Ex18_F conversion constructor (from Ex18_A) should not have been exposed to python")
