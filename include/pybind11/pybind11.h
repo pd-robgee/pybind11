@@ -1071,9 +1071,9 @@ template <typename InputType, typename OutputType>
 typename std::enable_if<std::is_convertible<InputType, OutputType>::value>::type
 implicitly_cpp_convertible(detail::type_info &input_type) {
     // Some validity checks on output type:
-    if (not std::is_destructible<OutputType>::value)
+    if (!std::is_destructible<OutputType>::value)
         pybind11_fail("implicitly_convertible: " + type_id<OutputType>() + " is not destructible");
-    if (not std::is_move_constructible<OutputType>::value and not std::is_copy_constructible<OutputType>::value)
+    if (!std::is_move_constructible<OutputType>::value && !std::is_copy_constructible<OutputType>::value)
         pybind11_fail("implicitly_convertible: " + type_id<OutputType>() + " is not move- or copy-constructible");
 
     input_type.implicit_cpp_conversions.emplace(std::type_index(typeid(OutputType)),
@@ -1081,13 +1081,13 @@ implicitly_cpp_convertible(detail::type_info &input_type) {
                 // Takes a pointer to the InputType object, allocates an OutputType with the implicit
                 // conversion value and moves/copies the converted value into it, returning a pointer.
                 // Returns nullptr if input is nullptr.  The caller is responsible for destruction.
-                if (not input) return nullptr;
+                if (!input) return nullptr;
                 OutputType t = *reinterpret_cast<InputType*>(input);
                 return new OutputType(std::move(t));
             });
 }
 template <typename InputType, typename OutputType>
-typename std::enable_if<not std::is_convertible<InputType, OutputType>::value>::type
+typename std::enable_if<!std::is_convertible<InputType, OutputType>::value>::type
 implicitly_cpp_convertible(detail::type_info &) {
     pybind11_fail("implicitly_convertible: C++ implicit conversion from " + type_id<InputType>() +
             " to " + type_id<OutputType>() + " is not valid");
