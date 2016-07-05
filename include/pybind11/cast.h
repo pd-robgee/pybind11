@@ -695,7 +695,7 @@ template <typename T> struct implicit_caster<T, typename std::enable_if<std::is_
 #endif
     }
     template <typename W> static constexpr bool same_pointer() { return std::is_same<typename intrinsic_type<W>::type, T>::value && std::is_pointer<W>::value; }
-    template <typename W> static constexpr bool same_lvaluer() { return std::is_same<typename intrinsic_type<W>::type, T>::value && std::is_lvalue_reference<W>::value; }
+    template <typename W> static constexpr bool same_lvaluer() { return std::is_same<typename intrinsic_type<W>::type, T>::value && !std::is_pointer<W>::value && std::is_lvalue_reference<W>::value; }
     // We only apply implicit conversion when the type is a pointer or lvalue; the other get() is
     // needed for the code to compile with non-convertible types, so won't actually be called.
     template <typename W> typename std::enable_if<same_pointer<W>(), W>::type get() { return ptr; }
