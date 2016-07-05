@@ -682,14 +682,18 @@ template <typename T, typename SFINAE = void> struct implicit_caster {
 // Destructible types: we also manage the T pointer, destroying it during our destruction.
 template <typename T> struct implicit_caster<T, typename std::enable_if<std::is_destructible<T>::value>::type> {
     T *ptr = nullptr;
-// Disable GCC polymorphic destructor warning: when ptr is set it's an actual instance, not a base
-// class pointer.
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdelete-non-virtual-dtor"
     ~implicit_caster() {
+#if defined(__GNUG__) && !defined(__clang__)
+   // Disable GCC polymorphic destructor warning here (but leave it enabled elsewhere): we only set
+   // ptr to an actual instance, not a base class pointer, so this warning is a false positive.
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wdelete-non-virtual-dtor"
+#endif
         if (ptr) delete ptr;
+#if defined(__GNUG__) && !defined(__clang__)
+#  pragma GCC diagnostic pop
+#endif
     }
-#pragma GCC diagnostic pop
     template <typename W> static constexpr bool same_pointer() { return std::is_same<typename intrinsic_type<W>::type, T>::value && std::is_pointer<W>::value; }
     template <typename W> static constexpr bool same_lvaluer() { return std::is_same<typename intrinsic_type<W>::type, T>::value && std::is_lvalue_reference<W>::value; }
     // We only apply implicit conversion when the type is a pointer or lvalue; the other get() is
