@@ -690,13 +690,13 @@ template <typename T> struct implicit_caster<T, typename std::enable_if<std::is_
         if (ptr) delete ptr;
     }
 #pragma GCC diagnostic pop
-    template <typename W> static constexpr bool same_pointer = std::is_same<typename intrinsic_type<W>::type, T>::value and std::is_pointer<W>::value;
-    template <typename W> static constexpr bool same_lvaluer = std::is_same<typename intrinsic_type<W>::type, T>::value and std::is_lvalue_reference<W>::value;
+    template <typename W> static constexpr bool same_pointer() { return std::is_same<typename intrinsic_type<W>::type, T>::value and std::is_pointer<W>::value; }
+    template <typename W> static constexpr bool same_lvaluer() { return std::is_same<typename intrinsic_type<W>::type, T>::value and std::is_lvalue_reference<W>::value; }
     // We only apply implicit conversion when the type is a pointer or lvalue; the other get() is
     // needed for the code to compile with non-convertible types, so won't actually be called.
-    template <typename W> typename std::enable_if<same_pointer<W>, W>::type get() { return ptr; }
-    template <typename W> typename std::enable_if<same_lvaluer<W>, W>::type get() { return *ptr; }
-    template <typename W> typename std::enable_if<not same_pointer<W> and not same_lvaluer<W>, W>::type get() {
+    template <typename W> typename std::enable_if<same_pointer<W>(), W>::type get() { return ptr; }
+    template <typename W> typename std::enable_if<same_lvaluer<W>(), W>::type get() { return *ptr; }
+    template <typename W> typename std::enable_if<not same_pointer<W>() and not same_lvaluer<W>(), W>::type get() {
         throw std::logic_error("pybind11 bug: this should not be called."); }
 };
 
