@@ -657,7 +657,7 @@ template <typename T> bool implicit_cpp_convert(T *&ptr, handle src) {
 // instantiate this if it's used in the tuple template class when the template args don't depend on
 // the class template arguments--but if that happens, implicit.h's specialization will be invalid
 // (can't specialize after instantiation).
-template <bool Enable, typename> struct implicit_conversion_enabled : public std::integral_constant<bool, false> {
+template <bool Enable, typename> struct implicit_cpp_conversion_enabled : public std::integral_constant<bool, false> {
     template <typename... Tuple> using conversion_type = bool;
 };
 
@@ -735,15 +735,15 @@ protected: \
 protected: \
     std::tuple<type_caster<typename intrinsic_type<Tuple>::type>...> value;
 
-template <typename... Tuple> class type_caster<std::tuple<Tuple...>, typename std::enable_if<implicit_conversion_enabled<true, std::tuple<Tuple...>>::value>::type> {
+template <typename... Tuple> class type_caster<std::tuple<Tuple...>, typename std::enable_if<implicit_cpp_conversion_enabled<true, std::tuple<Tuple...>>::value>::type> {
 
     PYBIND11_TUPLE_CASTER_COMMON
 
 public:
     template <typename ReturnValue, typename Func, size_t ... Index> ReturnValue call(Func &&f, index_sequence<Index...>) {
         return f(
-            (std::get<Index>(implicit_converted).ptr != nullptr
-                ? std::get<Index>(implicit_converted).template get<
+            (std::get<Index>(implicit_cpp_instance).ptr != nullptr
+                ? std::get<Index>(implicit_cpp_instance).template get<
                     typename type_caster<typename intrinsic_type<Tuple>::type>::template cast_op_type<Tuple>
                     >()
                 : std::get<Index>(value)
@@ -756,9 +756,9 @@ public:
         std::array<bool, size> success {{
             (
                 std::get<Indices>(value).load(ptrs[Indices], convert)
-                // If basic conversion fails, try registered implicit cpp conversion:
+                // If basic loading/conversion fails, try registered implicit C++ conversion:
                 ||
-                implicit_cpp_convert(std::get<Indices>(implicit_converted).ptr, ptrs[Indices])
+                implicit_cpp_convert(std::get<Indices>(implicit_cpp_instance).ptr, ptrs[Indices])
             )...
         }};
         (void) convert; /* avoid a warning when the tuple is empty */
@@ -769,10 +769,10 @@ public:
     }
 
 protected:
-    typename implicit_conversion_enabled<true, type>::template conversion_type<Tuple...> implicit_converted; \
+    typename implicit_cpp_conversion_enabled<true, type>::template conversion_type<Tuple...> implicit_cpp_instance; \
 };
 
-template <typename... Tuple> class type_caster<std::tuple<Tuple...>, typename std::enable_if<!implicit_conversion_enabled<true, std::tuple<Tuple...>>::value>::type> {
+template <typename... Tuple> class type_caster<std::tuple<Tuple...>, typename std::enable_if<!implicit_cpp_conversion_enabled<true, std::tuple<Tuple...>>::value>::type> {
 
     PYBIND11_TUPLE_CASTER_COMMON
 

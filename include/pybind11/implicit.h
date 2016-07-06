@@ -49,7 +49,7 @@ template <typename T> struct implicit_caster<T, typename std::enable_if<std::is_
 };
 
 
-template <typename T> struct implicit_conversion_enabled<true, T> : public std::integral_constant<bool, true> {
+template <typename T> struct implicit_cpp_conversion_enabled<true, T> : public std::integral_constant<bool, true> {
     template <typename... Tuple> using conversion_type = std::tuple<implicit_caster<typename intrinsic_type<Tuple>::type>...>;
 };
 
