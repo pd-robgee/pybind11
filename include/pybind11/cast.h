@@ -123,6 +123,30 @@ PYBIND11_NOINLINE inline handle get_object_handle(const void *ptr) {
     return handle((PyObject *) it->second);
 }
 
+// Attempts an implicit cpp conversion to the type with the given std::type_index.  If it works,
+// sets the given T* to the new object and returns true.  Otherwise leaves the pointer alone
+// and returns false.
+template <typename T> bool implicit_cpp_convert(T *&ptr, handle src) {
+    std::type_index typeidx(typeid(T));
+    // Check if T is a registered C++ conversion for src; if it isn't, but src has a base class, try that, etc.,
+    // because src may not have a registered implicit converter, but one of its base classes might.
+    for (   detail::type_info *type = get_type_info((PyTypeObject *) src.get_type().ptr(), false);
+            type;
+            type = get_parent_type_info(type->type)) {
+
+        auto &conversions = type->implicit_cpp_conversions;
+        // It is, so now see if it has a declared implicit converter for T
+        auto it = conversions.find(typeidx);
+        if (it != conversions.end()) {
+            // It does, so extract the data pointer and do the explicit conversion
+            void *cppobj = ((instance<void> *) src.ptr())->value;
+            ptr = (T*) it->second(cppobj);
+            return true;
+        }
+    }
+    return false;
+}
+
 inline PyThreadState *get_thread_state_unchecked() {
 #if   PY_VERSION_HEX < 0x03000000
     return _PyThreadState_Current;
@@ -240,6 +264,20 @@ protected:
     object temp;
 };
 
+template <typename T> typename std::enable_if<!std::is_destructible<T>::value>::type destruct_if_needed(T*) {}
+template <typename T> typename std::enable_if<std::is_destructible<T>::value>::type destruct_if_needed(T* ptr) {
+#if defined(__GNUG__) && !defined(__clang__)
+   // Disable GCC polymorphic destructor warning here (but leave it enabled elsewhere): we only set
+   // ptr to an actual instance, not a base class pointer, so this warning is a false positive.
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wdelete-non-virtual-dtor"
+#endif
+    if (ptr) delete ptr;
+#if defined(__GNUG__) && !defined(__clang__)
+#  pragma GCC diagnostic pop
+#endif
+}
+
 /* Determine suitable casting operator */
 template <typename T>
 using cast_op_type = typename std::conditional<std::is_pointer<typename std::remove_reference<T>::type>::value,
@@ -273,10 +311,22 @@ public:
 
     template <typename T> using cast_op_type = pybind11::detail::cast_op_type<T>;
 
-    operator type*() { return (type *) value; }
-    operator type&() { if (!value) throw reference_cast_error(); return *((type *) value); }
+    bool load_or_convert(handle src, bool convert) {
+        return load(src, convert) or implicit_cpp_convert(implicit_converted, src);
+    }
 
+    operator type*() { return (type *) (implicit_converted ? implicit_converted : value); }
+    operator type&() {
+        if (implicit_converted) return *((type *) implicit_converted);
+        if (value) return *((type *) value);
+        throw reference_cast_error();
+    }
+
+    ~type_caster_base() {
+        destruct_if_needed(implicit_converted);
+    }
 protected:
+    type *implicit_converted{nullptr};
     typedef void *(*Constructor)(const void *stream);
 #if !defined(_MSC_VER)
     /* Only enabled when the types are {copy,move}-constructible *and* when the type
@@ -310,17 +360,23 @@ public:
     operator std::reference_wrapper<type>() { return std::ref(*((type *) this->value)); }
 };
 
-#define PYBIND11_TYPE_CASTER(type, py_name) \
+// Full macro for use in a class which isn't named "type_caster" (ignoring template parameters):
+#define PYBIND11_TYPE_CASTER_RENAMED(type, py_name, class_name_no_template) \
     protected: \
         type value; \
+        type *implicit_converted{nullptr}; \
     public: \
         static PYBIND11_DESCR name() { return type_descr(py_name); } \
         static handle cast(const type *src, return_value_policy policy, handle parent) { \
             return cast(*src, policy, parent); \
         } \
-        operator type*() { return &value; } \
-        operator type&() { return value; } \
-        template <typename _T> using cast_op_type = pybind11::detail::cast_op_type<_T>
+        bool load_or_convert(handle src, bool convert) { return load(src, convert) or implicit_cpp_convert(implicit_converted, src); } \
+        ~class_name_no_template() { destruct_if_needed(implicit_converted); } \
+        operator type*() { return implicit_converted ? implicit_converted : &value; } \
+        operator type&() { return implicit_converted ? *((type *) implicit_converted) : value; } \
+        template <typename _T> using cast_op_type = pybind11::detail::cast_op_type<_T> \
+
+#define PYBIND11_TYPE_CASTER(type, py_name) PYBIND11_TYPE_CASTER_RENAMED(type, py_name, type_caster)
 
 #define PYBIND11_DECLARE_HOLDER_TYPE(type, holder_type) \
     namespace pybind11 { namespace detail { \
@@ -387,22 +443,7 @@ public:
         }
     }
 
-    static handle cast(const T *src, return_value_policy policy, handle parent) {
-        return cast(*src, policy, parent);
-    }
-
-    template <typename T2 = T, typename std::enable_if<std::is_integral<T2>::value, int>::type = 0>
-    static PYBIND11_DESCR name() { return type_descr(_("int")); }
-
-    template <typename T2 = T, typename std::enable_if<!std::is_integral<T2>::value, int>::type = 0>
-    static PYBIND11_DESCR name() { return type_descr(_("float")); }
-
-    operator T*() { return &value; }
-    operator T&() { return value; }
-
-    template <typename T2> using cast_op_type = pybind11::detail::cast_op_type<T2>;
-protected:
-    T value;
+    PYBIND11_TYPE_CASTER(T, _<std::is_integral<T>::value>("int", "float"));
 };
 
 template <> class type_caster<void_type> {
@@ -441,6 +482,11 @@ public:
 
         /* Fail */
         return false;
+    }
+
+    bool load_or_convert(handle src, bool convert) {
+        // Just load, don't convert
+        return load(src, convert);
     }
 
     static handle cast(const void *ptr, return_value_policy /* policy */, handle /* parent */) {
@@ -562,6 +608,7 @@ public:
         if (src.ptr() == Py_None) return true;
         return type_caster<std::string>::load(src, convert);
     }
+    bool load_or_convert(handle src, bool convert) { return load(src, convert) or implicit_cpp_convert(implicit_converted, src); }
 
     static handle cast(const char *src, return_value_policy /* policy */, handle /* parent */) {
         if (src == nullptr) return handle(Py_None).inc_ref();
@@ -585,6 +632,7 @@ public:
         if (src.ptr() == Py_None) return true;
         return type_caster<std::wstring>::load(src, convert);
     }
+    bool load_or_convert(handle src, bool convert) { return load(src, convert) or implicit_cpp_convert(implicit_converted, src); }
 
     static handle cast(const wchar_t *src, return_value_policy /* policy */, handle /* parent */) {
         if (src == nullptr) return handle(Py_None).inc_ref();
@@ -610,8 +658,12 @@ public:
             return false;
         else if (!PyTuple_Check(src.ptr()) || PyTuple_Size(src.ptr()) != 2)
             return false;
-        return  first.load(PyTuple_GET_ITEM(src.ptr(), 0), convert) &&
-               second.load(PyTuple_GET_ITEM(src.ptr(), 1), convert);
+        return  first.load_or_convert(PyTuple_GET_ITEM(src.ptr(), 0), convert) &&
+               second.load_or_convert(PyTuple_GET_ITEM(src.ptr(), 1), convert);
+    }
+
+    bool load_or_convert(handle src, bool convert) {
+        return load(src, convert) or implicit_cpp_convert(implicit_converted, src);
     }
 
     static handle cast(const type &src, return_value_policy policy, handle parent) {
@@ -634,68 +686,16 @@ public:
     template <typename T> using cast_op_type = type;
 
     operator type() {
+        if (implicit_converted) return *implicit_converted;
         return type(first .operator typename type_caster<typename intrinsic_type<T1>::type>::template cast_op_type<T1>(),
                     second.operator typename type_caster<typename intrinsic_type<T2>::type>::template cast_op_type<T2>());
     }
+
+    ~type_caster() { destruct_if_needed(implicit_converted); }
 protected:
     type_caster<typename intrinsic_type<T1>::type> first;
     type_caster<typename intrinsic_type<T2>::type> second;
-};
-
-// Attempts an implicit cpp conversion to the type with the given std::type_index.  If it works,
-// sets the given T* to the new object and returns true.  Otherwise leaves the pointer alone
-// and returns false.
-template <typename T> bool implicit_cpp_convert(T *&ptr, handle src) {
-    std::type_index typeidx(typeid(T));
-    // Check if T is a registered C++ conversion for src; if it isn't, but src has a base class, try that, etc.,
-    // because src may not have a registered implicit converter, but one of its base classes might.
-    for (   detail::type_info *type = get_type_info((PyTypeObject *) src.get_type().ptr(), false);
-            type;
-            type = get_parent_type_info(type->type)) {
-
-        auto &conversions = type->implicit_cpp_conversions;
-        // It is, so now see if it has a declared implicit converter for T
-        auto it = conversions.find(typeidx);
-        if (it != conversions.end()) {
-            // It does, so extract the data pointer and do the explicit conversion
-            void *cppobj = ((instance<void> *) src.ptr())->value;
-            ptr = (T*) it->second(cppobj);
-            return true;
-        }
-    }
-    return false;
-}
-// Base class for non-destructible types.  We don't use this, but we need ptr and get() to exist
-// (they won't be touched at run-time, because we only allow implicit conversion for destructible
-// types).
-template <typename T, typename SFINAE = void> struct implicit_caster {
-    T *ptr = nullptr;
-    template <typename W> W get() {
-        throw std::logic_error("pybind11 bug: this should not be called."); }
-};
-// Destructible types: we also manage the T pointer, destroying it during our destruction.
-template <typename T> struct implicit_caster<T, typename std::enable_if<std::is_destructible<T>::value>::type> {
-    T *ptr = nullptr;
-    ~implicit_caster() {
-#if defined(__GNUG__) && !defined(__clang__)
-   // Disable GCC polymorphic destructor warning here (but leave it enabled elsewhere): we only set
-   // ptr to an actual instance, not a base class pointer, so this warning is a false positive.
-#  pragma GCC diagnostic push
-#  pragma GCC diagnostic ignored "-Wdelete-non-virtual-dtor"
-#endif
-        if (ptr) delete ptr;
-#if defined(__GNUG__) && !defined(__clang__)
-#  pragma GCC diagnostic pop
-#endif
-    }
-    template <typename W> static constexpr bool same_pointer() { return std::is_same<typename intrinsic_type<W>::type, T>::value && std::is_pointer<W>::value; }
-    template <typename W> static constexpr bool same_lvaluer() { return std::is_same<typename intrinsic_type<W>::type, T>::value && !std::is_pointer<W>::value && std::is_lvalue_reference<W>::value; }
-    // We only apply implicit conversion when the type is a pointer or lvalue; the other get() is
-    // needed for the code to compile with non-convertible types, so won't actually be called.
-    template <typename W> typename std::enable_if<same_pointer<W>(), W>::type get() { return ptr; }
-    template <typename W> typename std::enable_if<same_lvaluer<W>(), W>::type get() { return *ptr; }
-    template <typename W> typename std::enable_if<!same_pointer<W>() && !same_lvaluer<W>(), W>::type get() {
-        throw std::logic_error("pybind11 bug: this should not be called."); }
+    type *implicit_converted{nullptr};
 };
 
 template <typename... Tuple> class type_caster<std::tuple<Tuple...>> {
@@ -713,6 +713,10 @@ public:
         if (!src || !PyTuple_Check(src.ptr()) || PyTuple_GET_SIZE(src.ptr()) != size)
             return false;
         return load(src, convert, typename make_index_sequence<sizeof...(Tuple)>::type());
+    }
+
+    bool load_or_convert(handle src, bool convert) {
+        return load(src, convert) or implicit_cpp_convert(implicit_converted, src);
     }
 
     template <typename T = itype, typename std::enable_if<
@@ -761,15 +765,13 @@ public:
         return cast(typename make_index_sequence<sizeof...(Tuple)>::type());
     }
 
+    ~type_caster() { destruct_if_needed(implicit_converted); }
+
 protected:
     template <typename ReturnValue, typename Func, size_t ... Index> ReturnValue call(Func &&f, index_sequence<Index...>) {
         return f(
-            (std::get<Index>(implicit_converted).ptr != nullptr
-                ? std::get<Index>(implicit_converted).template get<
-                    typename type_caster<typename intrinsic_type<Tuple>::type>::template cast_op_type<Tuple>
-                    >()
-                : std::get<Index>(value)
-                    .operator typename type_caster<typename intrinsic_type<Tuple>::type>::template cast_op_type<Tuple>()
+            (std::get<Index>(value)
+             .operator typename type_caster<typename intrinsic_type<Tuple>::type>::template cast_op_type<Tuple>()
             )...);
     }
 
@@ -782,10 +784,7 @@ protected:
         std::array<PyObject *, size> ptrs {{ PyTuple_GET_ITEM(src.ptr(), Indices)... }};
         std::array<bool, size> success {{
             (
-                std::get<Indices>(value).load(ptrs[Indices], convert)
-                // If basic conversion fails, try registered implicit cpp conversion:
-                ||
-                implicit_cpp_convert(std::get<Indices>(implicit_converted).ptr, ptrs[Indices])
+                std::get<Indices>(value).load_or_convert(ptrs[Indices], convert)
             )...
         }};
         (void) convert; /* avoid a warning when the tuple is empty */
@@ -812,7 +811,7 @@ protected:
 
 protected:
     std::tuple<type_caster<typename intrinsic_type<Tuple>::type>...> value;
-    std::tuple<implicit_caster<typename intrinsic_type<Tuple>::type>...> implicit_converted;
+    type *implicit_converted{nullptr};
 };
 
 /// Type caster for holder types like std::shared_ptr, etc.
@@ -846,6 +845,11 @@ public:
         }
 
         return false;
+    }
+
+    bool load_or_convert(handle src, bool convert) {
+        // Don't do implicit conversion on holder types, just load
+        return load(src, convert);
     }
 
     explicit operator type*() { return this->value; }

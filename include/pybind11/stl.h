@@ -53,7 +53,7 @@ template <typename Type, typename Key> struct set_caster {
         return s.release();
     }
 
-    PYBIND11_TYPE_CASTER(type, _("set<") + key_conv::name() + _(">"));
+    PYBIND11_TYPE_CASTER_RENAMED(type, _("set<") + key_conv::name() + _(">"), set_caster);
 };
 
 template <typename Type, typename Key, typename Value> struct map_caster {
@@ -89,7 +89,7 @@ template <typename Type, typename Key, typename Value> struct map_caster {
         return d.release();
     }
 
-    PYBIND11_TYPE_CASTER(type, _("dict<") + key_conv::name() + _(", ") + value_conv::name() + _(">"));
+    PYBIND11_TYPE_CASTER_RENAMED(type, _("dict<") + key_conv::name() + _(", ") + value_conv::name() + _(">"), map_caster);
 };
 
 template <typename Type, typename Value> struct list_caster {
@@ -128,7 +128,7 @@ template <typename Type, typename Value> struct list_caster {
         return l.release();
     }
 
-    PYBIND11_TYPE_CASTER(Type, _("list<") + value_conv::name() + _(">"));
+    PYBIND11_TYPE_CASTER_RENAMED(Type, _("list<") + value_conv::name() + _(">"), list_caster);
 };
 
 template <typename Type, typename Alloc> struct type_caster<std::vector<Type, Alloc>>
