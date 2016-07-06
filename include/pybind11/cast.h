@@ -650,15 +650,37 @@ template <typename T> bool implicit_cpp_convert(T *&ptr, handle src) {
     }
     return false;
 }
-
-// Generalized template here; implicit.h provides a specialization that enables conversion
-//
-// NB: need the second template parameter here to prevent instantiation: g++ (at least) will
-// instantiate this if it's used in the tuple template class when the template args don't depend on
-// the class template arguments--but if that happens, implicit.h's specialization will be invalid
-// (can't specialize after instantiation).
-template <bool Enable, typename> struct implicit_conversion_enabled : public std::integral_constant<bool, false> {
-    template <typename... Tuple> using conversion_type = bool;
+// Base class for non-destructible types.  We don't use this, but we need ptr and get() to exist
+// (they won't be touched at run-time, because we only allow implicit conversion for destructible
+// types).
+template <typename T, typename SFINAE = void> struct implicit_caster {
+    T *ptr = nullptr;
+    template <typename W> W get() {
+        throw std::logic_error("pybind11 bug: this should not be called."); }
+};
+// Destructible types: we also manage the T pointer, destroying it during our destruction.
+template <typename T> struct implicit_caster<T, typename std::enable_if<std::is_destructible<T>::value>::type> {
+    T *ptr = nullptr;
+    ~implicit_caster() {
+#if defined(__GNUG__) && !defined(__clang__)
+   // Disable GCC polymorphic destructor warning here (but leave it enabled elsewhere): we only set
+   // ptr to an actual instance, not a base class pointer, so this warning is a false positive.
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wdelete-non-virtual-dtor"
+#endif
+        if (ptr) delete ptr;
+#if defined(__GNUG__) && !defined(__clang__)
+#  pragma GCC diagnostic pop
+#endif
+    }
+    template <typename W> static constexpr bool same_pointer() { return std::is_same<typename intrinsic_type<W>::type, T>::value && std::is_pointer<W>::value; }
+    template <typename W> static constexpr bool same_lvaluer() { return std::is_same<typename intrinsic_type<W>::type, T>::value && !std::is_pointer<W>::value && std::is_lvalue_reference<W>::value; }
+    // We only apply implicit conversion when the type is a pointer or lvalue; the other get() is
+    // needed for the code to compile with non-convertible types, so won't actually be called.
+    template <typename W> typename std::enable_if<same_pointer<W>(), W>::type get() { return ptr; }
+    template <typename W> typename std::enable_if<same_lvaluer<W>(), W>::type get() { return *ptr; }
+    template <typename W> typename std::enable_if<!same_pointer<W>() && !same_lvaluer<W>(), W>::type get() {
+        throw std::logic_error("pybind11 bug: this should not be called."); }
 };
 
 template <typename... Tuple> class type_caster<std::tuple<Tuple...>> {
@@ -725,8 +747,7 @@ public:
     }
 
 protected:
-    template <typename ReturnValue, typename Func, size_t ... Index>
-    typename std::enable_if<implicit_conversion_enabled<true, type>::value, ReturnValue>::type call(Func &&f, index_sequence<Index...>) {
+    template <typename ReturnValue, typename Func, size_t ... Index> ReturnValue call(Func &&f, index_sequence<Index...>) {
         return f(
             (std::get<Index>(implicit_converted).ptr != nullptr
                 ? std::get<Index>(implicit_converted).template get<
@@ -737,25 +758,12 @@ protected:
             )...);
     }
 
-    template <typename ReturnValue, typename Func, size_t ... Index>
-    typename std::enable_if<!implicit_conversion_enabled<true, type>::value, ReturnValue>::type call(Func &&f, index_sequence<Index...>) {
-        return f(
-            (std::get<Index>(value)
-                    .operator typename type_caster<typename intrinsic_type<Tuple>::type>::template cast_op_type<Tuple>()
-            )...);
-    }
-
     template <size_t ... Index> type cast(index_sequence<Index...>) {
         return type(std::get<Index>(value)
             .operator typename type_caster<typename intrinsic_type<Tuple>::type>::template cast_op_type<Tuple>()...);
     }
 
-    template <size_t ... Indices> bool load(handle src, bool convert, index_sequence<Indices...> i) {
-        return load((typename std::conditional<implicit_conversion_enabled<true, type>::value, signed int, unsigned int>::type) 0,
-                src, convert, std::move(i));
-    }
-
-    template <size_t ... Indices> bool load(signed int, handle src, bool convert, index_sequence<Indices...>) {
+    template <size_t ... Indices> bool load(handle src, bool convert, index_sequence<Indices...>) {
         std::array<PyObject *, size> ptrs {{ PyTuple_GET_ITEM(src.ptr(), Indices)... }};
         std::array<bool, size> success {{
             (
@@ -763,21 +771,6 @@ protected:
                 // If basic conversion fails, try registered implicit cpp conversion:
                 ||
                 implicit_cpp_convert(std::get<Indices>(implicit_converted).ptr, ptrs[Indices])
-            )...
-        }};
-        (void) convert; /* avoid a warning when the tuple is empty */
-        for (bool r : success)
-            if (!r)
-                return false;
-        return true;
-    }
-
-    template <size_t ... Indices> bool load(unsigned int, handle src, bool convert, index_sequence<Indices...>) {
-        std::array<PyObject *, size> ptrs {{ PyTuple_GET_ITEM(src.ptr(), Indices)... }};
-        std::array<bool, size> success {{
-            (
-                std::get<Indices>(value).load(ptrs[Indices], convert)
-                // implicit conversion not enabled
             )...
         }};
         (void) convert; /* avoid a warning when the tuple is empty */
@@ -804,7 +797,7 @@ protected:
 
 protected:
     std::tuple<type_caster<typename intrinsic_type<Tuple>::type>...> value;
-    typename implicit_conversion_enabled<true, type>::template conversion_type<Tuple...> implicit_converted;
+    std::tuple<implicit_caster<typename intrinsic_type<Tuple>::type>...> implicit_converted;
 };
 
 /// Type caster for holder types like std::shared_ptr, etc.

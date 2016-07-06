@@ -621,13 +621,11 @@ Python side:
 With this statement, our Python code can now call ``func(a)`` and have it
 treated as if we had written ``func(B(a))``.
 
-When including the additional header file :file:`pybind11/implicit.h`, pybind11
-will also enable converting from pybind11-registered types to non-registered
-types using implicit conversion at the C++ level.  If ``A`` is a
-pybind11-registered type but ``B`` is not, this tells pybind11 that it is able
-to perform implicit conversion from an ``a`` variable containing an ``A``
-instance to the ``B`` C++ type using C++ implicit conversion.  This allows you
-to make use of C++ implicit conversions, as in this example:
+If ``A`` is a pybind11-registered type but ``B`` is not, this enables implicit
+conversion at the C++ level: it tells pybind11 that it is allowed to perform
+implicit conversion from an ``a`` variable containing an ``A`` instance to the
+``B`` C++ type using C++ implicit conversion.  This allows you to make use of
+C++ implicit conversions, as in this examples:
 
 .. code-block:: cpp
 
@@ -635,7 +633,7 @@ to make use of C++ implicit conversions, as in this example:
         // ...
         operator double () const { return 42.0; }
     };
-    class B { /* ... */ }
+    class B {
     class PrivateType {
         PrivateType(const B &b) { /* ... */ }
         // ...
@@ -643,8 +641,7 @@ to make use of C++ implicit conversions, as in this example:
 
     py::class_<A>(m, "A")
         /// ... members ...
-    py::class_<B>(m, "B")
-        /// ... members ...
+
     // Note: no py::class_<PrivateType>
 
     py::implicitly_convertible<A, double>();
@@ -661,7 +658,7 @@ is not exposed via pybind11).
 .. seealso::
 
     The file :file:`example/example18.cpp` contains a complete example that
-    demonstrates how to use both types of implicit conversions in more detail.
+    demonstrates how to use implicit conversions in more detail.
 
 .. _static_properties:
 

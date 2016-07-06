@@ -8,7 +8,6 @@
 */
 
 #include "example.h"
-#include <pybind11/implicit.h>
 #include <cmath>
 
 /// Objects to test implicit conversion
