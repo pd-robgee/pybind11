@@ -312,21 +312,22 @@ public:
     template <typename T> using cast_op_type = pybind11::detail::cast_op_type<T>;
 
     bool load_or_convert(handle src, bool convert) {
-        return load(src, convert) or implicit_cpp_convert(implicit_converted, src);
+        if (load(src, convert)) return true;
+        if (implicit_cpp_convert(value, src)) { need_destroy = true; return true; }
+        return false;
     }
 
-    operator type*() { return (type *) (implicit_converted ? implicit_converted : value); }
+    operator type*() { return (type *) value; }
     operator type&() {
-        if (implicit_converted) return *((type *) implicit_converted);
         if (value) return *((type *) value);
         throw reference_cast_error();
     }
 
     ~type_caster_base() {
-        destruct_if_needed(implicit_converted);
+        if (need_destroy) destruct_if_needed(value);
     }
 protected:
-    type *implicit_converted{nullptr};
+    bool need_destroy{false};
     typedef void *(*Constructor)(const void *stream);
 #if !defined(_MSC_VER)
     /* Only enabled when the types are {copy,move}-constructible *and* when the type
