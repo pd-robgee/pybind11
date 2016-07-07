@@ -1102,9 +1102,6 @@ template <typename InputType, typename OutputType> void implicitly_convertible()
     auto *output_type = detail::get_type_info(typeid(OutputType));
     if (output_type) {
         // Implicit conversion to a registered type, via registered constructors
-        if (!output_type)
-            pybind11_fail("implicitly_convertible: output type " + type_id<OutputType>() + " is not a pybind11-registered type");
-
         output_type->implicit_conversions_python.push_back([](PyObject *obj, PyTypeObject *type) -> PyObject * {
             if (!detail::type_caster<InputType>().load(obj, false))
                 return nullptr;
