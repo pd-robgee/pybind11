@@ -1098,7 +1098,8 @@ implicitly_cpp_convertible(detail::type_info &) {
 }
 NAMESPACE_END(detail)
 
-template <typename InputType, typename OutputType> void implicitly_convertible() {
+template <typename InputType, typename OutputType, bool ImplicitConvEnabled = detail::implicit_cpp_conversion_enabled<true, OutputType>::value>
+void implicitly_convertible() {
     auto *output_type = detail::get_type_info(typeid(OutputType));
     if (output_type) {
         // Implicit conversion to a registered type, via registered constructors
@@ -1113,15 +1114,18 @@ template <typename InputType, typename OutputType> void implicitly_convertible()
             return result;
         });
     }
-    else {
+    else if (ImplicitConvEnabled) {
         // Otherwise our OutputType is an unregistered type: require InputType to be registered,
         // because otherwise this is pointless.
         auto *input_type = detail::get_type_info(typeid(InputType));
         if (!input_type)
             pybind11_fail("implicitly_convertible: input type " + type_id<InputType>() + " is not a pybind11-registered type");
 
-        detail::implicitly_cpp_convertible<InputType, OutputType>(*input_type);
 
+        detail::implicitly_cpp_convertible<InputType, OutputType>(*input_type);
+    }
+    else {
+        pybind11_fail("implicitly_convertible: implicit conversion to non-pybind11-registered types requires `#include <pybind11/implicit.h>'");
     }
 }
 
