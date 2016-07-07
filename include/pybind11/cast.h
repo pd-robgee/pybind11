@@ -769,7 +769,7 @@ public:
     }
 
 protected:
-    typename implicit_cpp_conversion_enabled<true, type>::template conversion_type<Tuple...> implicit_cpp_instance; \
+    typename implicit_cpp_conversion_enabled<true, type>::template conversion_type<Tuple...> implicit_cpp_instance;
 };
 
 template <typename... Tuple> class type_caster<std::tuple<Tuple...>, typename std::enable_if<!implicit_cpp_conversion_enabled<true, std::tuple<Tuple...>>::value>::type> {
