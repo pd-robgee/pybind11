@@ -26,10 +26,10 @@ struct type_info {
     size_t type_size;
     void (*init_holder)(PyObject *, const void *);
     // Implicit conversions from other types to this type via declared Python constructor
-    std::vector<PyObject *(*)(PyObject *, PyTypeObject *) > implicit_python_conversions;
+    std::vector<PyObject *(*)(PyObject *, PyTypeObject *) > implicit_conversions_python;
     // Implicit C++-level conversions from this type to other types
     std::unordered_map<std::type_index, void *(*)(void *)>
-        implicit_cpp_conversions;
+        implicit_conversions_cpp;
     buffer_info *(*get_buffer)(PyObject *, void *) = nullptr;
     void *get_buffer_data = nullptr;
 };
@@ -153,7 +153,7 @@ public:
 
         if (convert) {
             // Walk through the implicit python conversions looking for one that works.
-            for (auto &converter : typeinfo->implicit_python_conversions) {
+            for (auto &converter : typeinfo->implicit_conversions_python) {
                 temp = object(converter(src.ptr(), typeinfo->type), false);
                 if (load(temp, false))
                     return true;
@@ -638,7 +638,7 @@ template <typename T> bool implicit_cpp_convert(T *&ptr, handle src) {
             type;
             type = get_parent_type_info(type->type)) {
 
-        auto &conversions = type->implicit_cpp_conversions;
+        auto &conversions = type->implicit_conversions_cpp;
         // It is, so now see if it has a declared implicit converter for T
         auto it = conversions.find(typeidx);
         if (it != conversions.end()) {
@@ -823,7 +823,7 @@ public:
 
         if (convert) {
             // Walk through the implicit python conversions looking for one that works.
-            for (auto &converter : typeinfo->implicit_python_conversions) {
+            for (auto &converter : typeinfo->implicit_conversions_python) {
                 temp = object(converter(src.ptr(), typeinfo->type), false);
                 if (load(temp, false))
                     return true;

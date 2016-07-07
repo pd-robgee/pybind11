@@ -1076,7 +1076,7 @@ implicitly_cpp_convertible(detail::type_info &input_type) {
     if (!std::is_move_constructible<OutputType>::value && !std::is_copy_constructible<OutputType>::value)
         pybind11_fail("implicitly_convertible: " + type_id<OutputType>() + " is not move- or copy-constructible");
 
-    input_type.implicit_cpp_conversions.emplace(std::type_index(typeid(OutputType)),
+    input_type.implicit_conversions_cpp.emplace(std::type_index(typeid(OutputType)),
             [](void *input) -> void * {
                 // Takes a pointer to the InputType object, allocates an OutputType with the implicit
                 // conversion value and moves/copies the converted value into it, returning a pointer.
@@ -1101,7 +1101,7 @@ template <typename InputType, typename OutputType> void implicitly_convertible()
         if (!output_type)
             pybind11_fail("implicitly_convertible: output type " + type_id<OutputType>() + " is not a pybind11-registered type");
 
-        output_type->implicit_python_conversions.push_back([](PyObject *obj, PyTypeObject *type) -> PyObject * {
+        output_type->implicit_conversions_python.push_back([](PyObject *obj, PyTypeObject *type) -> PyObject * {
             if (!detail::type_caster<InputType>().load(obj, false))
                 return nullptr;
             tuple args(1);
