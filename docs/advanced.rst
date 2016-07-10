@@ -185,21 +185,32 @@ The following interactive session shows how to call them from Python.
     >>> plus_1(number=43)
     44L
 
-.. note::
-
-    This functionality is very useful when generating bindings for callbacks in
-    C++ libraries (e.g. a graphical user interface library).
-
-    The file :file:`example/example5.cpp` contains a complete example that
-    demonstrates how to work with callbacks and anonymous functions in more detail.
-
 .. warning::
 
     Keep in mind that passing a function from C++ to Python (or vice versa)
     will instantiate a piece of wrapper code that translates function
-    invocations between the two languages. Copying the same function back and
-    forth between Python and C++ many times in a row will cause these wrappers
-    to accumulate, which can decrease performance.
+    invocations between the two languages. Naturally, this translation
+    increases the computational cost of each function call somewhat. A
+    problematic situation can arise when a function is copied back and forth
+    between Python and C++ many times in a row, in which case the underlying
+    wrappers will accumulate correspondingly. The resulting long sequence of
+    C++ -> Python -> C++ -> ... roundtrips can significantly decrease
+    performance.
+
+    There is one exception: pybind11 detects case where a stateless function
+    (i.e. a function pointer or a lambda function without captured variables)
+    is passed as an argument to another C++ function exposed in Python. In this
+    case, there is no overhead. Pybind11 will extract the underlying C++
+    function pointer from the wrapped function to sidestep a potential C++ ->
+    Python -> C++ roundtrip. This is demonstrated in Example 5.
+
+.. note::
+
+    This functionality is very useful when generating bindings for callbacks in
+    C++ libraries (e.g. GUI libraries, asynchronous networking libraries, etc.).
+
+    The file :file:`example/example5.cpp` contains a complete example that
+    demonstrates how to work with callbacks and anonymous functions in more detail.
 
 Overriding virtual functions in Python
 ======================================
@@ -282,7 +293,7 @@ helper class that is defined as follows:
 
 The macro :func:`PYBIND11_OVERLOAD_PURE` should be used for pure virtual
 functions, and :func:`PYBIND11_OVERLOAD` should be used for functions which have
-a default implementation. 
+a default implementation.
 
 There are also two alternate macros :func:`PYBIND11_OVERLOAD_PURE_NAME` and
 :func:`PYBIND11_OVERLOAD_NAME` which take a string-valued name argument
@@ -1652,3 +1663,39 @@ work, it is important that all lines are indented consistently, i.e.:
 
 .. [#f4] http://www.sphinx-doc.org
 .. [#f5] http://github.com/pybind/python_example
+
+Evaluating Python expressions from strings and files
+====================================================
+
+pybind11 provides the :func:`eval` and :func:`eval_file` functions to evaluate
+Python expressions and statements. The following example illustrates how they
+can be used.
+
+Both functions accept a template parameter that describes how the argument
+should be interpreted. Possible choices include ``eval_expr`` (isolated
+expression), ``eval_single_statement`` (a single statement, return value is
+always ``none``), and ``eval_statements`` (sequence of statements, return value
+is always ``none``).
+
+.. code-block:: cpp
+
+    // At beginning of file
+    #include <pybind11/eval.h>
+
+    ...
+
+    // Evaluate in scope of main module
+    py::object scope = py::module::import("__main__").attr("__dict__");
+
+    // Evaluate an isolated expression
+    int result = py::eval("my_variable + 10", scope).cast<int>();
+
+    // Evaluate a sequence of statements
+    py::eval<py::eval_statements>(
+        "print('Hello')\n"
+        "print('world!');",
+        scope);
+
+    // Evaluate the statements in an separate Python file on disk
+    py::eval_file("script.py", scope);
+

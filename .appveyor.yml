@@ -12,8 +12,10 @@ environment:
   matrix:
     - CMAKE_PLATFORM: "Visual Studio 14 2015"
       PYTHON_DIR: "C:\\Python34"
+      CTEST_OUTPUT_ON_FAILURE: 1
     - CMAKE_PLATFORM: "Visual Studio 14 2015 Win64"
       PYTHON_DIR: "C:\\Python34-x64"
+      CTEST_OUTPUT_ON_FAILURE: 1
 install:
   - cinstall: python
 build_script:

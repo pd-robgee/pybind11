@@ -244,3 +244,4 @@ Passing extra arguments to the def function
 .. function:: name::name(const char *value)
 
     Used to specify the function name
+
