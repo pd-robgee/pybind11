@@ -27,9 +27,6 @@ struct type_info {
     void (*init_holder)(PyObject *, const void *);
     // Implicit conversions from other types to this type via declared Python constructor
     std::vector<PyObject *(*)(PyObject *, PyTypeObject *) > implicit_conversions_python;
-    // Implicit C++-level conversions from this type to other types
-    std::unordered_map<std::type_index, void *(*)(void *)>
-        implicit_conversions_cpp;
     buffer_info *(*get_buffer)(PyObject *, void *) = nullptr;
     void *get_buffer_data = nullptr;
 };
@@ -154,6 +151,95 @@ inline PyThreadState *get_thread_state_unchecked() {
 #else
     return _PyThreadState_UncheckedGet();
 #endif
+}
+
+PYBIND11_NOINLINE inline bool try_implicit_conversion(const bool already_loaded[], const std::vector<PyObject *> &py_args) {
+    auto &internals = get_internals();
+    auto &instances = internals.implicit_instances_stack.top().first;
+    auto &arg_types = *internals.implicit_instances_stack.top().second;
+    auto &imp_conv = internals.implicit_conversions_cpp;
+
+    // Store the constructors we find; we only actually construct if we find a constructor for all
+    // unloaded types:
+    std::vector<std::pair<size_t, void *(*)(void *)>> constructors;
+    for (size_t i = 0; i < arg_types.size(); i++) {
+        if (already_loaded[i]) continue;
+        auto type = Py_TYPE(py_args[i]);
+
+        for (auto &conversion : imp_conv[arg_types[i]]) {
+            if (PyType_IsSubtype(type, conversion.first)) {
+                auto &constructor = conversion.second;
+                if (constructor) {
+                    constructors.emplace_back(i, constructor);
+                }
+                // Allow a null constructor reference to abort conversion attempts
+                break;
+            }
+        }
+        // If the i'th argument didn't load normally, and we didn't find a constructor, we can't do implicit conversion
+        if (constructors.empty() || constructors.back().first != i)
+            return false;
+    }
+
+    if (constructors.empty()) {
+        // This shouldn't be possible: it means either the function has no arguments, or every
+        // argument was already loaded: but in both of those cases we shouldn't have been called
+        pybind11_fail("Internal error: try_implicit_conversion shouldn't have been called");
+    }
+
+    // We found constructors for every unloaded argument, so now do the construction.
+    try {
+        for (auto &constr : constructors) {
+            // Construct new instance:
+            instances[constr.first] = constr.second(((detail::instance<void> *) py_args[constr.first])->value);
+        }
+    }
+    catch (...) {
+        // If one of the constructors raised an exception we abort, but first we need to destroy any
+        // instances we might have created before getting the exception
+        auto &destructors = internals.implicit_destructors;
+        for (auto &constr : constructors) {
+            if (instances[constr.first]) {
+                destructors[arg_types[constr.first]](instances[constr.first]);
+                instances[constr.first] = nullptr;
+            }
+        }
+        return false;
+    }
+
+    return true;
+}
+
+/** Pushes a new nullptr vector of the given size (which must be the number of function arguments)
+ * onto the implicit_instances stack.  This must be done before calling a function, and when done,
+ * implicit_instances_pop() must be called to remove it and perform any necessary cleanup.
+ */
+inline void implicit_instances_push(const std::vector<std::type_index> *args) {
+    get_internals().implicit_instances_stack.emplace(std::vector<void*>(args->size(), nullptr), std::move(args));
+}
+
+/// Returns a pointer to the data at the the top of the implicit instances stack
+PYBIND11_NOINLINE inline void** implicit_instances_top_ptr() {
+    return get_internals().implicit_instances_stack.top().first.data();
+}
+
+/** Pops the top element off the implicit instances stack, and cleans up any instances (if
+ * necessary).  Must be called with the argument types so that we can find the destructor to call.
+ */
+inline void implicit_instances_pop() {
+    auto &internals = get_internals();
+    {
+        auto &instances = internals.implicit_instances_stack.top().first;
+        auto &arg_types = *internals.implicit_instances_stack.top().second;
+        auto &destructors = internals.implicit_destructors;
+
+        for (size_t i = 0; i < instances.size(); i++) {
+            if (instances[i]) {
+                destructors[arg_types[i]](instances[i]);
+            }
+        }
+    }
+    internals.implicit_instances_stack.pop();
 }
 
 class type_caster_generic {
@@ -408,7 +494,9 @@ public:
         }
     }
 
-    PYBIND11_TYPE_CASTER(T, _<std::is_integral<T>::value>("int", "float"));
+    // The first descr below encodes the actual type, but we provide a signature type of "int" or
+    // "float" rather than its more varied cpp names (unsigned long, short, double, etc.)
+    PYBIND11_TYPE_CASTER(T, _<T>("") + _<std::is_integral<T>::value>("int", "float"));
 };
 
 template <> class type_caster<void_type> {
@@ -476,7 +564,7 @@ public:
     static handle cast(bool src, return_value_policy /* policy */, handle /* parent */) {
         return handle(src ? Py_True : Py_False).inc_ref();
     }
-    PYBIND11_TYPE_CASTER(bool, _("bool"));
+    PYBIND11_TYPE_CASTER(bool, _<bool>("bool"));
 };
 
 template <> class type_caster<std::string> {
@@ -504,7 +592,7 @@ public:
         return PyUnicode_FromStringAndSize(src.c_str(), (ssize_t) src.length());
     }
 
-    PYBIND11_TYPE_CASTER(std::string, _(PYBIND11_STRING_NAME));
+    PYBIND11_TYPE_CASTER(std::string, _<std::string>(PYBIND11_STRING_NAME));
 protected:
     bool success = false;
 };
@@ -557,7 +645,7 @@ public:
         return PyUnicode_FromWideChar(src.c_str(), (ssize_t) src.length());
     }
 
-    PYBIND11_TYPE_CASTER(std::wstring, _(PYBIND11_STRING_NAME));
+    PYBIND11_TYPE_CASTER(std::wstring, _<std::wstring>(PYBIND11_STRING_NAME));
 protected:
     bool success = false;
 };
@@ -582,7 +670,7 @@ public:
     operator char*() { return success ? (char *) value.c_str() : nullptr; }
     operator char&() { return value[0]; }
 
-    static PYBIND11_DESCR name() { return type_descr(_(PYBIND11_STRING_NAME)); }
+    static PYBIND11_DESCR name() { return type_descr(_<char>(PYBIND11_STRING_NAME)); }
 };
 
 template <> class type_caster<wchar_t> : public type_caster<std::wstring> {
@@ -605,7 +693,7 @@ public:
     operator wchar_t*() { return success ? (wchar_t *) value.c_str() : nullptr; }
     operator wchar_t&() { return value[0]; }
 
-    static PYBIND11_DESCR name() { return type_descr(_(PYBIND11_STRING_NAME)); }
+    static PYBIND11_DESCR name() { return type_descr(_<wchar_t>(PYBIND11_STRING_NAME)); }
 };
 
 template <typename T1, typename T2> class type_caster<std::pair<T1, T2>> {
@@ -648,176 +736,116 @@ protected:
     type_caster<typename intrinsic_type<T2>::type> second;
 };
 
-// Attempts an implicit cpp conversion to the type with the given std::type_index.  If it works,
-// sets the given T* to the new object and returns true.  Otherwise leaves the pointer alone
-// and returns false.
-template <typename T> bool implicit_cpp_convert(T *&ptr, handle src) {
-    std::type_index typeidx(typeid(T));
-    // Check if T is a registered C++ conversion for src; if it isn't, but src has a base class, try that, etc.,
-    // because src may not have a registered implicit converter, but one of its base classes might.
-    for (   detail::type_info *type = get_type_info((PyTypeObject *) src.get_type().ptr(), false);
-            type;
-            type = get_parent_type_info(type->type)) {
-
-        auto &conversions = type->implicit_conversions_cpp;
-        // It is, so now see if it has a declared implicit converter for T
-        auto it = conversions.find(typeidx);
-        if (it != conversions.end()) {
-            // It does, so extract the data pointer and do the explicit conversion
-            void *cppobj = ((instance<void> *) src.ptr())->value;
-            ptr = (T*) it->second(cppobj);
-            return true;
-        }
-    }
-    return false;
-}
-
-// Generalized template here; implicit.h provides a specialization that enables conversion
-//
-// NB: need the second template parameter here to prevent instantiation: g++ (at least) will
-// instantiate this if it's used in the tuple template class when the template args don't depend on
-// the class template arguments--but if that happens, implicit.h's specialization will be invalid
-// (can't specialize after instantiation).
-template <bool Enable, typename> struct implicit_cpp_conversion_enabled : public std::integral_constant<bool, false> {
-    template <typename... Tuple> using conversion_type = bool;
-};
-
-#define PYBIND11_TUPLE_CASTER_COMMON \
-    typedef std::tuple<Tuple...> type; \
-    typedef std::tuple<typename intrinsic_type<Tuple>::type...> itype; \
-    typedef std::tuple<args> args_type; \
-    typedef std::tuple<args, kwargs> args_kwargs_type; \
-public: \
-    enum { size = sizeof...(Tuple) }; \
-    static constexpr const bool has_kwargs = std::is_same<itype, args_kwargs_type>::value; \
-    static constexpr const bool has_args = has_kwargs || std::is_same<itype, args_type>::value; \
-    bool load(handle src, bool convert) { \
-        if (!src || !PyTuple_Check(src.ptr()) || PyTuple_GET_SIZE(src.ptr()) != size) \
-            return false; \
-        return load(src, convert, typename make_index_sequence<sizeof...(Tuple)>::type()); \
-    } \
-    template <typename T = itype, typename std::enable_if< \
-        !std::is_same<T, args_type>::value && \
-        !std::is_same<T, args_kwargs_type>::value, int>::type = 0> \
-    bool load_args(handle args, handle, bool convert) { \
-        return load(args, convert, typename make_index_sequence<sizeof...(Tuple)>::type()); \
-    } \
-    template <typename T = itype, typename std::enable_if<std::is_same<T, args_type>::value, int>::type = 0> \
-    bool load_args(handle args, handle, bool convert) { \
-        std::get<0>(value).load(args, convert); \
-        return true; \
-    } \
-    template <typename T = itype, typename std::enable_if<std::is_same<T, args_kwargs_type>::value, int>::type = 0> \
-    bool load_args(handle args, handle kwargs, bool convert) { \
-        std::get<0>(value).load(args, convert); \
-        std::get<1>(value).load(kwargs, convert); \
-        return true; \
-    } \
-    static handle cast(const type &src, return_value_policy policy, handle parent) { \
-        return cast(src, policy, parent, typename make_index_sequence<size>::type()); \
-    } \
-    static PYBIND11_DESCR name() { \
-        return type_descr( \
-               _("(") + \
-               detail::concat(type_caster<typename intrinsic_type<Tuple>::type>::name()...) + \
-               _(")")); \
-    } \
-    template <typename ReturnValue, typename Func> typename std::enable_if<!std::is_void<ReturnValue>::value, ReturnValue>::type call(Func &&f) { \
-        return call<ReturnValue>(std::forward<Func>(f), typename make_index_sequence<sizeof...(Tuple)>::type()); \
-    } \
-    template <typename ReturnValue, typename Func> typename std::enable_if<std::is_void<ReturnValue>::value, void_type>::type call(Func &&f) { \
-        call<ReturnValue>(std::forward<Func>(f), typename make_index_sequence<sizeof...(Tuple)>::type()); \
-        return void_type(); \
-    } \
-    template <typename T> using cast_op_type = type; \
-    operator type() { \
-        return cast(typename make_index_sequence<sizeof...(Tuple)>::type()); \
-    } \
-protected: \
-    template <size_t ... Index> type cast(index_sequence<Index...>) { \
-        return type(std::get<Index>(value) \
-            .operator typename type_caster<typename intrinsic_type<Tuple>::type>::template cast_op_type<Tuple>()...); \
-    } \
-    /* Implementation: Convert a C++ tuple into a Python tuple */ \
-    template <size_t ... Indices> static handle cast(const type &src, return_value_policy policy, handle parent, index_sequence<Indices...>) { \
-        std::array<object, size> entries {{ \
-            object(type_caster<typename intrinsic_type<Tuple>::type>::cast(std::get<Indices>(src), policy, parent), false)... \
-        }}; \
-        for (const auto &entry: entries) \
-            if (!entry) \
-                return handle(); \
-        tuple result(size); \
-        int counter = 0; \
-        for (auto & entry: entries) \
-            PyTuple_SET_ITEM(result.ptr(), counter++, entry.release().ptr()); \
-        return result.release(); \
-    } \
- \
-protected: \
-    std::tuple<type_caster<typename intrinsic_type<Tuple>::type>...> value;
-
-template <typename... Tuple> class type_caster<std::tuple<Tuple...>, typename std::enable_if<implicit_cpp_conversion_enabled<true, std::tuple<Tuple...>>::value>::type> {
-
-    PYBIND11_TUPLE_CASTER_COMMON
-
-public:
-    template <typename ReturnValue, typename Func, size_t ... Index> ReturnValue call(Func &&f, index_sequence<Index...>) {
-        return f(
-            (std::get<Index>(implicit_cpp_instance).ptr != nullptr
-                ? std::get<Index>(implicit_cpp_instance).template get<
-                    typename type_caster<typename intrinsic_type<Tuple>::type>::template cast_op_type<Tuple>
-                    >()
-                : std::get<Index>(value)
-                    .operator typename type_caster<typename intrinsic_type<Tuple>::type>::template cast_op_type<Tuple>()
-            )...);
-    }
-
-    template <size_t ... Indices> bool load(handle src, bool convert, index_sequence<Indices...>) {
-        std::array<PyObject *, size> ptrs {{ PyTuple_GET_ITEM(src.ptr(), Indices)... }};
-        std::array<bool, size> success {{
-            (
-                std::get<Indices>(value).load(ptrs[Indices], convert)
-                // If basic loading/conversion fails, try registered implicit C++ conversion:
-                ||
-                implicit_cpp_convert(std::get<Indices>(implicit_cpp_instance).ptr, ptrs[Indices])
-            )...
-        }};
-        (void) convert; /* avoid a warning when the tuple is empty */
-        for (bool r : success)
-            if (!r)
-                return false;
-        return true;
-    }
-
+template <typename... Tuple> class type_caster<std::tuple<Tuple...>> {
+    typedef std::tuple<Tuple...> type;
+    typedef std::tuple<typename intrinsic_type<Tuple>::type...> itype;
+    typedef std::tuple<args> args_type;
+    typedef std::tuple<args, kwargs> args_kwargs_type;
 protected:
-    typename implicit_cpp_conversion_enabled<true, type>::template conversion_type<Tuple...> implicit_cpp_instance;
-};
-
-template <typename... Tuple> class type_caster<std::tuple<Tuple...>, typename std::enable_if<!implicit_cpp_conversion_enabled<true, std::tuple<Tuple...>>::value>::type> {
-
-    PYBIND11_TUPLE_CASTER_COMMON
-
+    std::tuple<type_caster<typename intrinsic_type<Tuple>::type>...> value;
 public:
-    template <typename ReturnValue, typename Func, size_t ... Index> ReturnValue call(Func &&f, index_sequence<Index...>) {
-        return f(
-            (std::get<Index>(value)
-                    .operator typename type_caster<typename intrinsic_type<Tuple>::type>::template cast_op_type<Tuple>()
-            )...);
+    static constexpr const bool has_kwargs = std::is_same<itype, args_kwargs_type>::value;
+    static constexpr const bool has_args = has_kwargs || std::is_same<itype, args_type>::value;
+
+    enum { size = sizeof...(Tuple) };
+    bool load(handle src, bool convert) {
+        if (!src || !PyTuple_Check(src.ptr()) || PyTuple_GET_SIZE(src.ptr()) != size)
+            return false;
+        return load(src, convert, typename make_index_sequence<sizeof...(Tuple)>::type());
+    }
+    static handle cast(const type &src, return_value_policy policy, handle parent) {
+        return cast(src, policy, parent, typename make_index_sequence<size>::type());
+    }
+    static PYBIND11_DESCR name() {
+        return type_descr(
+               _("(") +
+               detail::concat(_(PYBIND11_DESCR_ARG_PREFIX) + type_caster<typename intrinsic_type<Tuple>::type>::name()...) +
+               _(")"));
+    }
+    template <typename T> using cast_op_type = type;
+    operator type() {
+        return cast(typename make_index_sequence<sizeof...(Tuple)>::type());
     }
 
-    template <size_t ... Indices> bool load(handle src, bool convert, index_sequence<Indices...>) {
-        std::array<PyObject *, size> ptrs {{ PyTuple_GET_ITEM(src.ptr(), Indices)... }};
-        std::array<bool, size> success {{
-            (
-                std::get<Indices>(value).load(ptrs[Indices], convert)
-                // Implicit C++ conversion disabled
-            )...
-        }};
+    // If loading of some elements fails, this will be set to indicate which elements were successfully loaded.
+    // If and only if those elements are successfully instantiated in the top of the instance stack may call() be called.
+    std::array<bool, size> loaded;
+
+    template <typename T = itype, typename std::enable_if<
+        !std::is_same<T, args_type>::value &&
+        !std::is_same<T, args_kwargs_type>::value, int>::type = 0>
+    bool load_args(handle, handle, const std::vector<PyObject*> &py_args) {
+        return load_items(py_args, typename make_index_sequence<sizeof...(Tuple)>::type());
+    }
+    template <typename T = itype, typename std::enable_if<std::is_same<T, args_type>::value, int>::type = 0>
+    bool load_args(handle args, handle, const std::vector<PyObject*> &) {
+        std::get<0>(value).load(args, true);
+        return true;
+    }
+    template <typename T = itype, typename std::enable_if<std::is_same<T, args_kwargs_type>::value, int>::type = 0>
+    bool load_args(handle args, handle kwargs, const std::vector<PyObject*> &) {
+        std::get<0>(value).load(args, true);
+        std::get<1>(value).load(kwargs, true);
+        return true;
+    }
+
+    template <typename ReturnValue, typename Func> typename std::enable_if<!std::is_void<ReturnValue>::value, ReturnValue>::type call(Func &&f) {
+        return call<ReturnValue>(std::forward<Func>(f), typename make_index_sequence<size>::type());
+    }
+    template <typename ReturnValue, typename Func> typename std::enable_if<std::is_void<ReturnValue>::value, void_type>::type call(Func &&f) {
+        call<ReturnValue>(std::forward<Func>(f), typename make_index_sequence<size>::type());
+        return void_type();
+    }
+protected:
+    template <size_t ... Index> type cast(index_sequence<Index...>) {
+        return type(std::get<Index>(value)
+            .operator typename type_caster<typename intrinsic_type<Tuple>::type>::template cast_op_type<Tuple>()...);
+    }
+    template <size_t ... Indices>
+    bool load(handle src, bool convert, index_sequence<Indices...>) {
+        loaded = {
+            std::get<Indices>(value).load(PyTuple_GET_ITEM(src.ptr(), Indices), convert)...
+        };
         (void) convert; /* avoid a warning when the tuple is empty */
-        for (bool r : success)
+        for (bool r : loaded)
             if (!r)
                 return false;
         return true;
+    }
+    template <size_t ... Indices>
+    bool load_items(const std::vector<PyObject*> &py_args, index_sequence<Indices...>) {
+        loaded = {
+            std::get<Indices>(value).load(py_args[Indices], true)...
+        };
+        //(void) convert; /* avoid a warning when the tuple is empty */
+        for (bool r : loaded)
+            if (!r)
+                return false;
+        return true;
+    }
+    /* Implementation: Convert a C++ tuple into a Python tuple */
+    template <size_t ... Indices> static handle cast(const type &src, return_value_policy policy, handle parent, index_sequence<Indices...>) {
+        std::array<object, size> entries {{
+            object(type_caster<typename intrinsic_type<Tuple>::type>::cast(std::get<Indices>(src), policy, parent), false)...
+        }};
+        for (const auto &entry: entries)
+            if (!entry)
+                return handle();
+        tuple result(size);
+        int counter = 0;
+        for (auto & entry: entries)
+            PyTuple_SET_ITEM(result.ptr(), counter++, entry.release().ptr());
+        return result.release();
+    }
+
+    template <typename ReturnValue, typename Func, size_t ... Index>
+    ReturnValue call(Func &&f, index_sequence<Index...>) {
+        void **implicit_instances = implicit_instances_top_ptr();
+        return f(
+            (implicit_instances[Index]
+                ? *reinterpret_cast<typename std::remove_reference<typename type_caster<typename intrinsic_type<Tuple>::type>::template cast_op_type<Tuple>>::type*>(implicit_instances[Index])
+                : std::get<Index>(value).operator typename type_caster<typename intrinsic_type<Tuple>::type>::template cast_op_type<Tuple>()
+            )...);
     }
 };
 

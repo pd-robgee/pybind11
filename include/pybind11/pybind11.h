@@ -101,18 +101,20 @@ protected:
         }
 
         /* Type casters for the function arguments and return value */
-        typedef detail::type_caster<typename std::tuple<Args...>> cast_in;
+        typedef detail::type_caster<std::tuple<Args...>> cast_in;
         typedef detail::type_caster<typename std::conditional<
             std::is_void<Return>::value, detail::void_type,
             typename detail::intrinsic_type<Return>::type>::type> cast_out;
 
         /* Dispatch code which converts function arguments and performs the actual function call */
-        rec->impl = [](detail::function_record *rec, handle args, handle kwargs, handle parent) -> handle {
+        rec->impl = [](detail::function_record *rec, handle args, handle kwargs, handle parent, const std::vector<PyObject*> &arg_items) -> handle {
             cast_in args_converter;
 
             /* Try to cast the function arguments into the C++ domain */
-            if (!args_converter.load_args(args, kwargs, true))
-                return PYBIND11_TRY_NEXT_OVERLOAD;
+            if (!(      args_converter.load_args(args, kwargs, arg_items)
+                        ||
+                        detail::try_implicit_conversion(args_converter.loaded.data(), arg_items)
+                )) return PYBIND11_TRY_NEXT_OVERLOAD;
 
             /* Invoke call policy pre-call hook */
             detail::process_attributes<Extra...>::precall(args);
@@ -136,7 +138,7 @@ protected:
 
         /* Generate a readable signature describing the function's arguments and return value types */
         using detail::descr;
-        PYBIND11_DESCR signature = cast_in::name() + detail::_(" -> ") + cast_out::name();
+        PYBIND11_DESCR signature = cast_in::name() + detail::_(PYBIND11_DESCR_IN_OUT_SEP) + cast_out::name();
 
         /* Register the function with Python from generic (non-templated) code */
         initialize_generic(rec, signature.text(), signature.types(), sizeof...(Args));
@@ -157,7 +159,7 @@ protected:
 
     /// Register a function call with Python (generic non-templated code goes here)
     void initialize_generic(detail::function_record *rec, const char *text,
-                            const std::type_info *const *types, int args) {
+                            const std::type_info *const *types, size_t args) {
 
         /* Create copies of all referenced C-style strings */
         rec->name = strdup(rec->name ? rec->name : "");
@@ -175,7 +177,8 @@ protected:
 
         /* Generate a proper function signature */
         std::string signature;
-        size_t type_depth = 0, char_index = 0, type_index = 0, arg_index = 0;
+        size_t type_depth = 0, char_index = 0, type_index = -1, arg_index = 0;
+        bool done_in = false;
         while (true) {
             char c = text[char_index++];
             if (c == '\0')
@@ -196,10 +199,29 @@ protected:
                     }
                     arg_index++;
                 }
-            } else if (c == '%') {
-                const std::type_info *t = types[type_index++];
-                if (!t)
+            } else if (c == PYBIND11_DESCR_ARG_PREFIX) { // New argument
+                if (!done_in && type_depth == 1) {
+                    rec->arg_types.push_back(std::type_index(typeid(detail::void_type)));
+                }
+            } else if (c == PYBIND11_DESCR_TYPE_INFO) {
+                type_index++;
+                if (!done_in && type_depth <= 2) {
+                    rec->arg_types.back() = std::type_index(*types[type_index]);
+                }
+            } else if (c == PYBIND11_DESCR_IN_OUT_SEP) {
+                signature += " -> ";
+                done_in = true;
+            } else if (c == PYBIND11_DESCR_AUTO_TYPE_NAME) {
+                // Replace % with a (runtime) name lookup based on the typeid
+
+                // Make sure we've been given a reference before the symbol
+                if (type_index == (size_t) -1)
                     pybind11_fail("Internal error while parsing type signature (1)");
+
+                const std::type_info *t = types[type_index];
+
+                if (!t)
+                    pybind11_fail("Internal error while parsing type signature (2)");
                 auto it = registered_types.find(std::type_index(*t));
                 if (it != registered_types.end()) {
                     signature += ((const detail::type_info *) it->second)->type->tp_name;
@@ -212,8 +234,10 @@ protected:
                 signature += c;
             }
         }
+        type_index++;
+
         if (type_depth != 0 || types[type_index] != nullptr)
-            pybind11_fail("Internal error while parsing type signature (2)");
+            pybind11_fail("Internal error while parsing type signature (3)");
 
         #if !defined(PYBIND11_CPP14)
             delete[] types;
@@ -406,8 +430,21 @@ protected:
 
                 try {
                     if ((kwargs_consumed == nkwargs || it->has_kwargs) &&
-                        (nargs_ == it->nargs || it->has_args))
-                        result = it->impl(it, args_, kwargs, parent);
+                        (nargs_ == it->nargs || it->has_args)) {
+                        try {
+                            detail::implicit_instances_push(&it->arg_types);
+                            std::vector<PyObject*> arg_items;
+                            arg_items.reserve(nargs_);
+                            for (size_t i = 0; i < nargs_; i++) {
+                                arg_items.push_back(PyTuple_GET_ITEM(args_.ptr(), i));
+                            }
+                            result = it->impl(it, args_, kwargs, parent, arg_items);
+                        } catch (...) {
+                            detail::implicit_instances_pop();
+                            throw;
+                        }
+                        detail::implicit_instances_pop();
+                    }
                 } catch (reference_cast_error &) {
                     result = PYBIND11_TRY_NEXT_OVERLOAD;
                 }
@@ -1111,6 +1148,24 @@ template <typename Type, typename... Extra> iterator make_iterator(Type &value, 
 }
 
 NAMESPACE_BEGIN(detail)
+
+template <typename InputType, typename OutputType>
+void* instance_create(void *input) {
+    // Takes a pointer to the InputType object, allocates an OutputType with the implicit
+    // conversion value and moves/copies the converted value into it, returning a pointer.
+    // Returns nullptr if input is nullptr.  The caller is responsible for destruction.
+    if (!input) return nullptr;
+    // The following is tempting, but will invoke *explicit* conversion paths, which we
+    // don't want to invoke:
+    // return new OutputType((OutputType) *reinterpret_cast<InputType*>(input));
+    // Instead we do this in two steps:
+    OutputType t = *reinterpret_cast<InputType*>(input); // implicit conversion
+    return new OutputType(std::move(t)); // move or copy
+}
+template <typename T>
+void instance_destroy(void *instance) {
+    delete (T*) instance;
+}
 // These have to be separated like this because the lambda in the proper version won't compile if
 // the C++ types aren't implicitly convertible.
 template <typename InputType, typename OutputType>
@@ -1122,19 +1177,19 @@ implicitly_cpp_convertible(detail::type_info &input_type) {
     if (!std::is_move_constructible<OutputType>::value && !std::is_copy_constructible<OutputType>::value)
         pybind11_fail("implicitly_convertible: " + type_id<OutputType>() + " is not move- or copy-constructible");
 
-    input_type.implicit_conversions_cpp.emplace(std::type_index(typeid(OutputType)),
-            [](void *input) -> void * {
-                // Takes a pointer to the InputType object, allocates an OutputType with the implicit
-                // conversion value and moves/copies the converted value into it, returning a pointer.
-                // Returns nullptr if input is nullptr.  The caller is responsible for destruction.
-                if (!input) return nullptr;
-                // The following is tempting, but will invoke *explicit* conversion paths, which we
-                // don't want to invoke:
-                // return new OutputType((OutputType) *reinterpret_cast<InputType*>(input));
-                // Instead we do this in two steps:
-                OutputType t = *reinterpret_cast<InputType*>(input); // implicit conversion
-                return new OutputType(std::move(t)); // move or copy
-            });
+    std::type_index outidx(typeid(OutputType));
+    auto &internals = get_internals();
+    auto &implicit_converters = internals.implicit_conversions_cpp[outidx];
+
+    // If the input type is a subclass of something else in the implicit conversion list, we need to
+    // put this one in just before it (so that this gets found first); otherwise we add to the end
+    auto it = implicit_converters.begin();
+    while (it != implicit_converters.end() && PyType_IsSubtype(input_type.type, std::get<0>(*it)))
+        ++it;
+    implicit_converters.emplace(it, input_type.type, &instance_create<InputType, OutputType>);
+
+    // Register the destructor (if it isn't already there)
+    internals.implicit_destructors.emplace(outidx, &instance_destroy<OutputType>);
 }
 template <typename InputType, typename OutputType>
 typename std::enable_if<!std::is_convertible<InputType, OutputType>::value>::type
@@ -1144,7 +1199,7 @@ implicitly_cpp_convertible(detail::type_info &) {
 }
 NAMESPACE_END(detail)
 
-template <typename InputType, typename OutputType, bool ImplicitConvEnabled = detail::implicit_cpp_conversion_enabled<true, OutputType>::value>
+template <typename InputType, typename OutputType>
 void implicitly_convertible() {
     auto *output_type = detail::get_type_info(typeid(OutputType));
     if (output_type) {
@@ -1160,7 +1215,7 @@ void implicitly_convertible() {
             return result;
         });
     }
-    else if (ImplicitConvEnabled) {
+    else {
         // Otherwise our OutputType is an unregistered type: require InputType to be registered,
         // because otherwise this is pointless.
         auto *input_type = detail::get_type_info(typeid(InputType));
@@ -1169,9 +1224,6 @@ void implicitly_convertible() {
 
 
         detail::implicitly_cpp_convertible<InputType, OutputType>(*input_type);
-    }
-    else {
-        pybind11_fail("implicitly_convertible: implicit conversion to non-pybind11-registered types requires `#include <pybind11/implicit.h>'");
     }
 }
 

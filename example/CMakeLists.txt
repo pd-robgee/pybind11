@@ -26,6 +26,7 @@ set(PYBIND11_EXAMPLES
   example17.cpp
   example18.cpp
   example19.cpp
+  example20.cpp
   issues.cpp
 )
 
