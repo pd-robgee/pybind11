@@ -42,7 +42,7 @@ pybind11 can map the following core C++ features to Python
 - Instance methods and static methods
 - Overloaded functions
 - Instance attributes and static attributes
-- Exceptions
+- Arbitrary exception types
 - Enumerations
 - Callbacks
 - Custom operators
@@ -89,7 +89,7 @@ In addition to the core functionality, pybind11 provides some extra goodies:
 1. Clang/LLVM (any non-ancient version with C++11 support)
 2. GCC (any non-ancient version with C++11 support)
 3. Microsoft Visual Studio 2015 or newer
-4. Intel C++ compiler v15 or newer
+4. Intel C++ compiler 16 or newer (15 with a [workaround](https://github.com/pybind/pybind11/issues/276))
 5. Cygwin/GCC (tested on 2.5.1)
 
 ## About
@@ -104,8 +104,9 @@ Sergey Lyskov
 Johan Mabille,
 Tomasz Miąsko,
 Dean Moldovan,
-Ben Pritchard, and
-Boris Schäling.
+Ben Pritchard,
+Boris Schäling, and
+Pim Schellart.
 
 ### License
 
