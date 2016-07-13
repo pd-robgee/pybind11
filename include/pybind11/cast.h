@@ -75,19 +75,6 @@ PYBIND11_NOINLINE inline internals &get_internals() {
     return *internals_ptr;
 }
 
-// Walks up the inheritance tree of `derived` until a registered (python) type is found, and returns
-// that base class type_info.  Returns nullptr if no registered base class is found.
-PYBIND11_NOINLINE inline detail::type_info* get_parent_type_info(PyTypeObject *type) {
-    if (!type) return nullptr;
-    auto const &type_dict = get_internals().registered_types_py;
-    while ((type = type->tp_base)) {
-        auto it = type_dict.find(type);
-        if (it != type_dict.end())
-            return (detail::type_info *) it->second;
-    }
-    return nullptr;
-}
-
 PYBIND11_NOINLINE inline detail::type_info* get_type_info(PyTypeObject *type, bool throw_if_missing = true) {
     auto const &type_dict = get_internals().registered_types_py;
     do {
