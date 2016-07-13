@@ -6,7 +6,7 @@ import difflib
 
 remove_unicode_marker = re.compile(r'u(\'[^\']*\')')
 remove_long_marker    = re.compile(r'([0-9])L')
-remove_hex            = re.compile(r'0x[0-9a-fA-F]+')
+remove_hex            = re.compile(r'0x[0-9a-fA-F]+|(?:[0-9A-F]{8}){1,2}')
 shorten_floats        = re.compile(r'([1-9][0-9]*\.[0-9]{4})[0-9]*')
 
 relaxed = False
