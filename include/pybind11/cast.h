@@ -166,19 +166,20 @@ PYBIND11_NOINLINE inline bool try_implicit_conversion(const bool already_loaded[
         if (already_loaded[i]) continue;
         auto type = Py_TYPE(py_args[i]);
 
+        bool found_constructor = false;
         for (auto &conversion : imp_conv[arg_types[i]]) {
             if (PyType_IsSubtype(type, conversion.first)) {
                 auto &constructor = conversion.second;
                 if (constructor) {
                     constructors.emplace_back(i, constructor);
+                    found_constructor = true;
                 }
                 // Allow a null constructor reference to abort conversion attempts
                 break;
             }
         }
         // If the i'th argument didn't load normally, and we didn't find a constructor, we can't do implicit conversion
-        if (constructors.empty() || constructors.back().first != i)
-            return false;
+        if (!found_constructor) return false;
     }
 
     if (constructors.empty()) {
