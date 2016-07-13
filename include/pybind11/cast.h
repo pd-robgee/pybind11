@@ -150,15 +150,15 @@ struct function_call_internals {
     std::vector<void *> implicit_instances_cpp;
 
     function_call_internals(
-            const function_record &rec,
+            function_record &rec,
             tuple &args,
             PyObject *kwargs,
             handle &parent,
             PyObject *py_args_tuple,
-            const std::vector<std::type_index> &arg_types
+            std::vector<std::type_index> &arg_types
             ) :
-        rec{rec}, args(args), kwargs(kwargs), parent{parent}, arg_types{arg_types},
-        py_args_tuple{py_args_tuple}, loaded(arg_types.size(), false), implicit_instances_cpp(arg_types.size(), nullptr)
+        rec(rec), args(args), kwargs(kwargs), parent(parent), arg_types(arg_types),
+        py_args_tuple(py_args_tuple), loaded(arg_types.size(), false), implicit_instances_cpp(arg_types.size(), nullptr)
     {}
 
     ~function_call_internals() {
