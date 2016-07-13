@@ -122,7 +122,7 @@ protected:
             detail::process_attributes<Extra...>::precall(fvars.args);
 
             /* Get a pointer to the capture object */
-            capture *cap = (capture *) (sizeof(capture) <= sizeof(rec->data)
+            capture *cap = (capture *) (sizeof(capture) <= sizeof(fvars.rec.data)
                                         ? &fvars.rec.data : fvars.rec.data[0]);
 
             /* Perform the function call */
