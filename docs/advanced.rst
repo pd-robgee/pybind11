@@ -632,34 +632,34 @@ Python side:
 With this statement, our Python code can now call ``func(a)`` and have it
 treated as if we had written ``func(B(a))``.
 
-When including the additional header file :file:`pybind11/implicit.h`, pybind11
-will also enable converting from pybind11-registered types to non-registered
-types using implicit conversion at the C++ level.  If ``A`` is a
-pybind11-registered type but ``B`` is not, this tells pybind11 that it is able
-to perform implicit conversion from an ``a`` variable containing an ``A``
-instance to the ``B`` C++ type using C++ implicit conversion.  This allows you
-to make use of C++ implicit conversions, as in this example:
+pybind11 also supports converting from pybind11-registered types to
+non-registered types using implicit conversion at the C++ level.  If ``A`` is a
+pybind11-registered type but ``B`` is not, the registration above tells
+pybind11 that it is able to perform implicit conversion from an ``a`` variable
+containing an ``A`` instance to the ``B`` C++ type using C++ implicit
+conversion.  This allows you to make use of C++ implicit conversions, as in
+this example:
 
 .. code-block:: cpp
 
-    class A {
+    class A1 {
         // ...
         operator double () const { return 42.0; }
     };
-    class B { /* ... */ }
+    class A2 { /* ... */ }
     class PrivateType {
-        PrivateType(const B &b) { /* ... */ }
+        PrivateType(const A2 &a2) { /* ... */ }
         // ...
     };
 
-    py::class_<A>(m, "A")
+    py::class_<A1>(m, "A1")
         /// ... members ...
-    py::class_<B>(m, "B")
+    py::class_<A2>(m, "A2")
         /// ... members ...
     // Note: no py::class_<PrivateType>
 
-    py::implicitly_convertible<A, double>();
-    py::implicitly_convertible<B, PrivateType>();
+    py::implicitly_convertible<A1, double>();
+    py::implicitly_convertible<A2, PrivateType>();
 
     m.def("square", [](double v) { return v*v; });
     m.def("special", [](const PrivateType &p) { /* ... */ });
@@ -671,7 +671,7 @@ is not exposed via pybind11).
 
 .. seealso::
 
-    The file :file:`example/example18.cpp` contains a complete example that
+    The file :file:`example/example20.cpp` contains a complete example that
     demonstrates how to use both types of implicit conversions in more detail.
 
 .. _static_properties:
