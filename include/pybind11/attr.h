@@ -103,7 +103,7 @@ struct function_record {
     std::vector<std::type_index> arg_types;
 
     /// Pointer to lambda function which converts arguments and performs the actual call
-    handle (*impl) (function_record *, handle, handle, handle, const std::vector<PyObject*> &) = nullptr;
+    handle (*impl) (function_call_internals&) = nullptr;
 
     /// Storage for the wrapped function pointer and captured data, if any
     void *data[3] = { };

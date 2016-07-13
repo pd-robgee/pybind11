@@ -107,28 +107,30 @@ protected:
             typename detail::intrinsic_type<Return>::type>::type> cast_out;
 
         /* Dispatch code which converts function arguments and performs the actual function call */
-        rec->impl = [](detail::function_record *rec, handle args, handle kwargs, handle parent, const std::vector<PyObject*> &arg_items) -> handle {
-            cast_in args_converter;
+        rec->impl = [](detail::function_call_internals &fvars) -> handle {
+            cast_in args_converter(&fvars);
 
             /* Try to cast the function arguments into the C++ domain */
-            if (!(      args_converter.load_args(args, kwargs, arg_items)
-                        ||
-                        detail::try_implicit_conversion(args_converter.loaded.data(), arg_items)
-                )) return PYBIND11_TRY_NEXT_OVERLOAD;
+            args_converter.load_args();
+
+            // Check that loading worked, and if not, whether alternatives will work (e.g. implicit
+            // C++ conversion)
+            if (!detail::loaded_or_alternatives(fvars))
+                return PYBIND11_TRY_NEXT_OVERLOAD;
 
             /* Invoke call policy pre-call hook */
-            detail::process_attributes<Extra...>::precall(args);
+            detail::process_attributes<Extra...>::precall(fvars.args);
 
             /* Get a pointer to the capture object */
             capture *cap = (capture *) (sizeof(capture) <= sizeof(rec->data)
-                                        ? &rec->data : rec->data[0]);
+                                        ? &fvars.rec.data : fvars.rec.data[0]);
 
             /* Perform the function call */
             handle result = cast_out::cast(args_converter.template call<Return>(cap->f),
-                                           rec->policy, parent);
+                                           fvars.rec.policy, fvars.parent);
 
             /* Invoke call policy post-call hook */
-            detail::process_attributes<Extra...>::postcall(args, result);
+            detail::process_attributes<Extra...>::postcall(fvars.args, result);
 
             return result;
         };
@@ -431,19 +433,10 @@ protected:
                 try {
                     if ((kwargs_consumed == nkwargs || it->has_kwargs) &&
                         (nargs_ == it->nargs || it->has_args)) {
-                        try {
-                            detail::implicit_instances_push(&it->arg_types);
-                            std::vector<PyObject*> arg_items;
-                            arg_items.reserve(nargs_);
-                            for (size_t i = 0; i < nargs_; i++) {
-                                arg_items.push_back(PyTuple_GET_ITEM(args_.ptr(), i));
-                            }
-                            result = it->impl(it, args_, kwargs, parent, arg_items);
-                        } catch (...) {
-                            detail::implicit_instances_pop();
-                            throw;
-                        }
-                        detail::implicit_instances_pop();
+
+                        detail::function_call_internals fvars(
+                                *it, args_, kwargs, parent, args_.ptr(), it->arg_types);
+                        result = it->impl(fvars);
                     }
                 } catch (reference_cast_error &) {
                     result = PYBIND11_TRY_NEXT_OVERLOAD;

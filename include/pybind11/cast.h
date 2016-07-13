@@ -153,21 +153,53 @@ inline PyThreadState *get_thread_state_unchecked() {
 #endif
 }
 
-PYBIND11_NOINLINE inline bool try_implicit_conversion(const bool already_loaded[], const std::vector<PyObject *> &py_args) {
-    auto &internals = get_internals();
-    auto &instances = internals.implicit_instances_stack.top().first;
-    auto &arg_types = *internals.implicit_instances_stack.top().second;
-    auto &imp_conv = internals.implicit_conversions_cpp;
+class function_record;
+struct function_call_internals {
+    const function_record &rec;
+    handle args, kwargs, &parent;
+    const std::vector<std::type_index> &arg_types;
+    PyObject *py_args_tuple;
+    std::vector<bool> loaded;
+    std::vector<void *> implicit_instances_cpp;
+
+    function_call_internals(
+            const function_record &rec,
+            tuple &args,
+            PyObject *kwargs,
+            handle &parent,
+            PyObject *py_args_tuple,
+            const std::vector<std::type_index> &arg_types
+            ) :
+        rec{rec}, args(args), kwargs(kwargs), parent{parent}, arg_types{arg_types},
+        py_args_tuple{py_args_tuple}, loaded(arg_types.size(), false), implicit_instances_cpp(arg_types.size(), nullptr)
+    {}
+
+    ~function_call_internals() {
+        auto &imp_conv = get_internals().implicit_conversions_cpp;
+
+        for (size_t i = 0; i < implicit_instances_cpp.size(); i++) {
+            if (implicit_instances_cpp[i]) {
+                imp_conv[arg_types[i]].destructor(implicit_instances_cpp[i]);
+            }
+        }
+    }
+};
+
+
+// Currently the only "alternative" here is implicit C++ conversion, but other alternatives could
+// also be supported here in the future.
+PYBIND11_NOINLINE inline bool loaded_or_alternatives(function_call_internals &fvars) {
+    auto &imp_conv = get_internals().implicit_conversions_cpp;
 
     // Store the constructors we find; we only actually construct if we find a constructor for all
     // unloaded types:
     std::vector<std::pair<size_t, void *(*)(void *)>> constructors;
-    for (size_t i = 0; i < arg_types.size(); i++) {
-        if (already_loaded[i]) continue;
-        auto type = Py_TYPE(py_args[i]);
+    for (size_t i = 0; i < fvars.arg_types.size(); i++) {
+        if (fvars.loaded[i]) continue;
+        auto type = Py_TYPE(PyTuple_GET_ITEM(fvars.py_args_tuple, i));
 
         bool found_constructor = false;
-        for (auto &conversion : imp_conv[arg_types[i]].constructors) {
+        for (auto &conversion : imp_conv[fvars.arg_types[i]].constructors) {
             if (PyType_IsSubtype(type, conversion.first)) {
                 auto &constructor = conversion.second;
                 if (constructor) {
@@ -182,64 +214,29 @@ PYBIND11_NOINLINE inline bool try_implicit_conversion(const bool already_loaded[
         if (!found_constructor) return false;
     }
 
-    if (constructors.empty()) {
-        // This shouldn't be possible: it means either the function has no arguments, or every
-        // argument was already loaded: but in both of those cases we shouldn't have been called
-        pybind11_fail("Internal error: try_implicit_conversion shouldn't have been called");
-    }
+    // If we this is empty that means all arguments loaded successfully
+    if (constructors.empty()) return true;
 
     // We found constructors for every unloaded argument, so now do the construction.
     try {
         for (auto &constr : constructors) {
             // Construct new instance:
-            instances[constr.first] = constr.second(((detail::instance<void> *) py_args[constr.first])->value);
+            fvars.implicit_instances_cpp[constr.first] = constr.second(((detail::instance<void> *) PyTuple_GET_ITEM(fvars.py_args_tuple, constr.first))->value);
         }
     }
     catch (...) {
         // If one of the constructors raised an exception we abort, but first we need to destroy any
         // instances we might have created before getting the exception
         for (auto &constr : constructors) {
-            if (instances[constr.first]) {
-                imp_conv[arg_types[constr.first]].destructor(instances[constr.first]);
-                instances[constr.first] = nullptr;
+            if (fvars.implicit_instances_cpp[constr.first]) {
+                imp_conv[fvars.arg_types[constr.first]].destructor(fvars.implicit_instances_cpp[constr.first]);
+                fvars.implicit_instances_cpp[constr.first] = nullptr;
             }
         }
         return false;
     }
 
     return true;
-}
-
-/** Pushes a new nullptr vector of the given size (which must be the number of function arguments)
- * onto the implicit_instances stack.  This must be done before calling a function, and when done,
- * implicit_instances_pop() must be called to remove it and perform any necessary cleanup.
- */
-inline void implicit_instances_push(const std::vector<std::type_index> *args) {
-    get_internals().implicit_instances_stack.emplace(std::vector<void*>(args->size(), nullptr), std::move(args));
-}
-
-/// Returns a pointer to the data at the the top of the implicit instances stack
-PYBIND11_NOINLINE inline void** implicit_instances_top_ptr() {
-    return get_internals().implicit_instances_stack.top().first.data();
-}
-
-/** Pops the top element off the implicit instances stack, and cleans up any instances (if
- * necessary).  Must be called with the argument types so that we can find the destructor to call.
- */
-inline void implicit_instances_pop() {
-    auto &internals = get_internals();
-    {
-        auto &instances = internals.implicit_instances_stack.top().first;
-        auto &arg_types = *internals.implicit_instances_stack.top().second;
-        auto &imp_conv = internals.implicit_conversions_cpp;
-
-        for (size_t i = 0; i < instances.size(); i++) {
-            if (instances[i]) {
-                imp_conv[arg_types[i]].destructor(instances[i]);
-            }
-        }
-    }
-    internals.implicit_instances_stack.pop();
 }
 
 class type_caster_generic {
@@ -743,15 +740,19 @@ template <typename... Tuple> class type_caster<std::tuple<Tuple...>> {
     typedef std::tuple<args, kwargs> args_kwargs_type;
 protected:
     std::tuple<type_caster<typename intrinsic_type<Tuple>::type>...> value;
+    // Function call data; must be set for any of the function call-related member functions
+    function_call_internals *fvars;
 public:
     static constexpr const bool has_kwargs = std::is_same<itype, args_kwargs_type>::value;
     static constexpr const bool has_args = has_kwargs || std::is_same<itype, args_type>::value;
+
+    type_caster(function_call_internals *fvars = nullptr) : fvars{fvars} {}
 
     enum { size = sizeof...(Tuple) };
     bool load(handle src, bool convert) {
         if (!src || !PyTuple_Check(src.ptr()) || PyTuple_GET_SIZE(src.ptr()) != size)
             return false;
-        return load(src, convert, typename make_index_sequence<sizeof...(Tuple)>::type());
+        return load(src, convert, typename make_index_sequence<size>::type());
     }
     static handle cast(const type &src, return_value_policy policy, handle parent) {
         return cast(src, policy, parent, typename make_index_sequence<size>::type());
@@ -764,29 +765,26 @@ public:
     }
     template <typename T> using cast_op_type = type;
     operator type() {
-        return cast(typename make_index_sequence<sizeof...(Tuple)>::type());
+        return cast(typename make_index_sequence<size>::type());
     }
-
-    // If loading of some elements fails, this will be set to indicate which elements were successfully loaded.
-    // If and only if those elements are successfully instantiated in the top of the instance stack may call() be called.
-    std::array<bool, size> loaded;
 
     template <typename T = itype, typename std::enable_if<
         !std::is_same<T, args_type>::value &&
         !std::is_same<T, args_kwargs_type>::value, int>::type = 0>
-    bool load_args(handle, handle, const std::vector<PyObject*> &py_args) {
-        return load_items(py_args, typename make_index_sequence<sizeof...(Tuple)>::type());
+    void load_args() {
+        load_items(typename make_index_sequence<size>::type());
     }
     template <typename T = itype, typename std::enable_if<std::is_same<T, args_type>::value, int>::type = 0>
-    bool load_args(handle args, handle, const std::vector<PyObject*> &) {
-        std::get<0>(value).load(args, true);
-        return true;
+    void load_args() {
+        std::get<0>(value).load(fvars->args, true);
+        fvars->loaded[0] = true;
     }
     template <typename T = itype, typename std::enable_if<std::is_same<T, args_kwargs_type>::value, int>::type = 0>
-    bool load_args(handle args, handle kwargs, const std::vector<PyObject*> &) {
-        std::get<0>(value).load(args, true);
-        std::get<1>(value).load(kwargs, true);
-        return true;
+    void load_args() {
+        std::get<0>(value).load(fvars->args, true);
+        std::get<1>(value).load(fvars->kwargs, true);
+        fvars->loaded[0] = true;
+        fvars->loaded[1] = true;
     }
 
     template <typename ReturnValue, typename Func> typename std::enable_if<!std::is_void<ReturnValue>::value, ReturnValue>::type call(Func &&f) {
@@ -803,7 +801,7 @@ protected:
     }
     template <size_t ... Indices>
     bool load(handle src, bool convert, index_sequence<Indices...>) {
-        loaded = {
+        std::array<bool, size> loaded = {
             std::get<Indices>(value).load(PyTuple_GET_ITEM(src.ptr(), Indices), convert)...
         };
         (void) convert; /* avoid a warning when the tuple is empty */
@@ -812,17 +810,12 @@ protected:
                 return false;
         return true;
     }
+
     template <size_t ... Indices>
-    bool load_items(const std::vector<PyObject*> &py_args, index_sequence<Indices...>) {
-        loaded = {
-            std::get<Indices>(value).load(py_args[Indices], true)...
-        };
-        //(void) convert; /* avoid a warning when the tuple is empty */
-        for (bool r : loaded)
-            if (!r)
-                return false;
-        return true;
+    void load_items(index_sequence<Indices...>) {
+        (void) (std::initializer_list<bool>) { (bool)(fvars->loaded[Indices] = std::get<Indices>(value).load(PyTuple_GET_ITEM(fvars->py_args_tuple, Indices), true))... };
     }
+
     /* Implementation: Convert a C++ tuple into a Python tuple */
     template <size_t ... Indices> static handle cast(const type &src, return_value_policy policy, handle parent, index_sequence<Indices...>) {
         std::array<object, size> entries {{
@@ -840,10 +833,9 @@ protected:
 
     template <typename ReturnValue, typename Func, size_t ... Index>
     ReturnValue call(Func &&f, index_sequence<Index...>) {
-        void **implicit_instances = implicit_instances_top_ptr();
         return f(
-            (implicit_instances[Index]
-                ? *reinterpret_cast<typename std::remove_reference<typename type_caster<typename intrinsic_type<Tuple>::type>::template cast_op_type<Tuple>>::type*>(implicit_instances[Index])
+            (fvars->implicit_instances_cpp[Index]
+                ? *reinterpret_cast<typename std::remove_reference<typename type_caster<typename intrinsic_type<Tuple>::type>::template cast_op_type<Tuple>>::type*>(fvars->implicit_instances_cpp[Index])
                 : std::get<Index>(value).operator typename type_caster<typename intrinsic_type<Tuple>::type>::template cast_op_type<Tuple>()
             )...);
     }
