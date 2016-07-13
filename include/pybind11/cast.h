@@ -167,7 +167,7 @@ PYBIND11_NOINLINE inline bool try_implicit_conversion(const bool already_loaded[
         auto type = Py_TYPE(py_args[i]);
 
         bool found_constructor = false;
-        for (auto &conversion : imp_conv[arg_types[i]]) {
+        for (auto &conversion : imp_conv[arg_types[i]].constructors) {
             if (PyType_IsSubtype(type, conversion.first)) {
                 auto &constructor = conversion.second;
                 if (constructor) {
@@ -198,10 +198,9 @@ PYBIND11_NOINLINE inline bool try_implicit_conversion(const bool already_loaded[
     catch (...) {
         // If one of the constructors raised an exception we abort, but first we need to destroy any
         // instances we might have created before getting the exception
-        auto &destructors = internals.implicit_destructors;
         for (auto &constr : constructors) {
             if (instances[constr.first]) {
-                destructors[arg_types[constr.first]](instances[constr.first]);
+                imp_conv[arg_types[constr.first]].destructor(instances[constr.first]);
                 instances[constr.first] = nullptr;
             }
         }
@@ -232,11 +231,11 @@ inline void implicit_instances_pop() {
     {
         auto &instances = internals.implicit_instances_stack.top().first;
         auto &arg_types = *internals.implicit_instances_stack.top().second;
-        auto &destructors = internals.implicit_destructors;
+        auto &imp_conv = internals.implicit_conversions_cpp;
 
         for (size_t i = 0; i < instances.size(); i++) {
             if (instances[i]) {
-                destructors[arg_types[i]](instances[i]);
+                imp_conv[arg_types[i]].destructor(instances[i]);
             }
         }
     }

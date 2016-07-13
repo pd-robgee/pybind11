@@ -1181,15 +1181,17 @@ implicitly_convertible_cpp(detail::type_info &input_type) {
     auto &internals = get_internals();
     auto &implicit_converters = internals.implicit_conversions_cpp[outidx];
 
+    // Register the destructor if it isn't already there (i.e. because the above map access
+    // auto-vivified the map element)
+    if (!implicit_converters.destructor)
+        implicit_converters.destructor = &implicit_conversion_cpp_destroy<OutputType>;
+
     // If the input type is a subclass of something else in the implicit conversion list, we need to
     // put this one in just before it (so that this gets found first); otherwise we add to the end
-    auto it = implicit_converters.begin();
-    while (it != implicit_converters.end() && !PyType_IsSubtype(input_type.type, std::get<0>(*it)))
+    auto it = implicit_converters.constructors.begin();
+    while (it != implicit_converters.constructors.end() && !PyType_IsSubtype(input_type.type, it->first))
         ++it;
-    implicit_converters.emplace(it, input_type.type, &implicit_conversion_cpp_create<InputType, OutputType>);
-
-    // Register the destructor (if it isn't already there)
-    internals.implicit_destructors.emplace(outidx, &implicit_conversion_cpp_destroy<OutputType>);
+    implicit_converters.constructors.emplace(it, input_type.type, &implicit_conversion_cpp_create<InputType, OutputType>);
 }
 template <typename InputType, typename OutputType>
 typename std::enable_if<!std::is_convertible<InputType, OutputType>::value>::type
