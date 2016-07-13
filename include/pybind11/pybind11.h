@@ -1184,7 +1184,7 @@ implicitly_cpp_convertible(detail::type_info &input_type) {
     // If the input type is a subclass of something else in the implicit conversion list, we need to
     // put this one in just before it (so that this gets found first); otherwise we add to the end
     auto it = implicit_converters.begin();
-    while (it != implicit_converters.end() && PyType_IsSubtype(input_type.type, std::get<0>(*it)))
+    while (it != implicit_converters.end() && !PyType_IsSubtype(input_type.type, std::get<0>(*it)))
         ++it;
     implicit_converters.emplace(it, input_type.type, &instance_create<InputType, OutputType>);
 

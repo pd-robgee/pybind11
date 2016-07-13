@@ -76,7 +76,25 @@ private:
     double value;
 };
 
+class Ex20_G1 {
+public:
+    operator long() const { return 111; }
+};
+class Ex20_G2 : public Ex20_G1 {
+public:
+    operator long() const { return 222; }
+};
+class Ex20_G3 {
+public:
+    operator long() const { return 333; }
+};
+class Ex20_G4 : public Ex20_G3 {
+public:
+    operator long() const { return 444; }
+};
+
 void print_double(double d) { std::cout << d << std::endl; }
+void print_long(long l) { std::cout << l << std::endl; }
 void print_string(const std::string &s) { std::cout << s << std::endl; }
 void print_ex20e(const Ex20_E &e) { std::cout << (double) e << std::endl; }
 void print_ex20f(const Ex20_F &f) { std::cout << (double) f << std::endl; }
@@ -124,6 +142,7 @@ void init_ex20(py::module &m) {
     py::implicitly_convertible<Ex20_D, Ex20_E>();
 
     m.def("print_double", &print_double);
+    m.def("print_long", &print_long);
     m.def("print_string", &print_string);
     m.def("print_ex20e", &print_ex20e);
     m.def("print_ex20f", &print_ex20f);
@@ -141,4 +160,15 @@ void init_ex20(py::module &m) {
     // developer).
     f.def(py::init<>());
 
+    py::class_<Ex20_G1> g1(m, "Ex20_G1");     g1.def(py::init<>());
+    py::class_<Ex20_G2> g2(m, "Ex20_G2", g1); g2.def(py::init<>());
+    py::class_<Ex20_G3> g3(m, "Ex20_G3");     g3.def(py::init<>());
+    py::class_<Ex20_G4> g4(m, "Ex20_G4", g3); g4.def(py::init<>());
+    // Make sure that the order we declare convertibility doesn't matter: i.e. the base class
+    // conversions here (G1 and G3) should not be invoked for G2 and G4, regardless of the
+    // implicitly convertible declaration order.
+    py::implicitly_convertible<Ex20_G2, long>();
+    py::implicitly_convertible<Ex20_G1, long>();
+    py::implicitly_convertible<Ex20_G3, long>();
+    py::implicitly_convertible<Ex20_G4, long>();
 }

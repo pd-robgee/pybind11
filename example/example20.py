@@ -8,7 +8,12 @@ from example import Ex20_B
 from example import Ex20_C
 from example import Ex20_D
 from example import Ex20_F
+from example import Ex20_G1
+from example import Ex20_G2
+from example import Ex20_G3
+from example import Ex20_G4
 from example import print_double
+from example import print_long
 from example import print_string
 from example import print_ex20e
 from example import print_ex20f
@@ -42,3 +47,8 @@ try:
     print("BAD: Ex20_F conversion constructor (from Ex20_A) should not have been exposed to python")
 except TypeError:
     pass
+
+print_long(Ex20_G1())
+print_long(Ex20_G2())
+print_long(Ex20_G3())
+print_long(Ex20_G4())
