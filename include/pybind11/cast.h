@@ -800,7 +800,9 @@ protected:
 
     template <size_t ... Indices>
     void load_items(index_sequence<Indices...>) {
-        (void) (std::initializer_list<bool>) { (bool)(fvars->loaded[Indices] = std::get<Indices>(value).load(PyTuple_GET_ITEM(fvars->py_args_tuple, Indices), true))... };
+        std::array<bool, size>{{
+            std::get<Indices>(value).load(PyTuple_GET_ITEM(fvars->py_args_tuple, Indices), true)...
+        }};
     }
 
     /* Implementation: Convert a C++ tuple into a Python tuple */
