@@ -12,6 +12,9 @@ from example import Ex20_G1
 from example import Ex20_G2
 from example import Ex20_G3
 from example import Ex20_G4
+from example import Ex20_H4
+from example import print_h1
+from example import increment_h2
 from example import print_double
 from example import print_long
 from example import print_string
@@ -52,3 +55,10 @@ print_long(Ex20_G1())
 print_long(Ex20_G2())
 print_long(Ex20_G3())
 print_long(Ex20_G4())
+
+h4 = Ex20_H4(17)
+print_h1(h4)
+increment_h2(h4)
+increment_h2(h4)
+increment_h2(h4)
+print_h1(h4)

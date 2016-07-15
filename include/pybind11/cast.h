@@ -16,6 +16,7 @@
 #include <array>
 #include <limits>
 #include <iostream>
+#include <list>
 
 NAMESPACE_BEGIN(pybind11)
 NAMESPACE_BEGIN(detail)
@@ -181,10 +182,65 @@ struct function_call_internals {
 };
 
 
+// Returns the chain of registered base class conversions from `from` to `to`.  If no such chain exists,
+// returns an empty vector.
+PYBIND11_NOINLINE inline std::vector<void *(*)(void *)> &find_upcast_chain(std::type_index from, std::type_index to) {
+    auto &upcasts = get_internals().upcast_conversions_cpp;
+
+    // First see if there is already an input type -> output type chain (either a direct
+    // conversion, or a cache from a previous lookup)
+    {
+        auto it = upcasts[from].find(to);
+        if (it != upcasts[from].end()) return it->second;
+    }
+
+    // If there isn't a match that means we haven't looked for the chain yet, so look now
+
+    // Track the best chain we find
+    std::vector<void *(*)(void *)> best_chain;
+
+    // Track the current (potentially incomplete) list of chains still to be considered
+    std::list<std::list<std::type_index>> to_consider;
+    to_consider.emplace_back();
+    to_consider.back().push_back(from);
+
+    // We're going to look for a chain of conversions from the C++ type associated with the
+    // python argument to the target type.  The chain starts with just the initial type.
+    while (!to_consider.empty()) {
+        auto chain = to_consider.front();
+        to_consider.pop_front();
+        // The chain ends in our target, which means we found a chain
+        if (chain.back() == to) {
+            std::vector<void *(*)(void *)> chain_ops;
+            for (auto next_it = chain.cbegin(), it = next_it++; next_it != chain.cend(); ++it, ++next_it) {
+                auto &intermediate = upcasts[*it][*next_it];
+                chain_ops.insert(chain_ops.end(), intermediate.begin(), intermediate.end());
+                if (best_chain.size() > 0 && best_chain.size() <= chain_ops.size()) break;
+            }
+            if (best_chain.size() == 0 || chain_ops.size() < best_chain.size()) {
+                best_chain = std::move(chain_ops);
+            }
+        }
+        // Otherwise, if the last item on the chain has castable base types, consider new
+        // concatenated chains using them
+        auto cast_from_it = upcasts.find(chain.back());
+        if (cast_from_it != upcasts.end()) {
+            for (auto &base : cast_from_it->second) {
+                to_consider.push_back(chain); // Copy the current chain
+                to_consider.back().push_back(base.first); // Append the base
+            }
+        }
+    }
+
+    return upcasts[from].emplace(std::make_pair(std::type_index(to), std::move(best_chain))).first->second;
+}
+
 // Currently the only "alternative" here is implicit C++ conversion, but other alternatives could
 // also be supported here in the future.
 PYBIND11_NOINLINE inline bool loaded_or_alternatives(function_call_internals &fvars) {
-    auto &imp_conv = get_internals().implicit_conversions_cpp;
+    auto &internals = get_internals();
+    auto &imp_conv = internals.implicit_conversions_cpp;
+    auto &upcast_types = internals.upcast_conversions_python_types;
 
     // Store the constructors we find; we only actually construct if we find a constructor for all
     // unloaded types:
@@ -195,18 +251,43 @@ PYBIND11_NOINLINE inline bool loaded_or_alternatives(function_call_internals &fv
         auto type = Py_TYPE(PyTuple_GET_ITEM(fvars.py_args_tuple, i));
 
         bool found = false;
-        for (auto &conversion : imp_conv[arg_type].constructors) {
-            if (PyType_IsSubtype(type, conversion.first)) {
-                auto &constructor = conversion.second;
-                if (constructor) {
-                    constructors.emplace_back(i, constructor);
-                    found = true;
-                }
-                // Allow a null constructor reference to abort conversion attempts
+        // First look for any upcast chains
+        std::type_index chain_start(typeid(void_type));
+        for (auto &python_cpp : upcast_types) {
+            if (PyType_IsSubtype(type, python_cpp.first)) {
+                chain_start = python_cpp.second;
                 break;
             }
         }
 
+        if (chain_start != std::type_index(typeid(void_type))) {
+            auto &chain = find_upcast_chain(chain_start, arg_type);
+            if (!chain.empty()) {
+                void *&ptr = fvars.implicit_pointers_cpp[i];
+                ptr = ((detail::instance<void> *) PyTuple_GET_ITEM(fvars.py_args_tuple, i))->value;
+                for (auto &cast : chain) {
+                    ptr = cast(ptr);
+                }
+                found = true;
+            }
+            // Otherwise (an empty chain) means base pointer conversion to the argument type is not
+            // available
+        }
+
+        if (!found) {
+            // We didn't find a base upcast chain, so try implicit conversion
+            for (auto &conversion : imp_conv[arg_type].constructors) {
+                if (PyType_IsSubtype(type, conversion.first)) {
+                    auto &constructor = conversion.second;
+                    if (constructor) {
+                        constructors.emplace_back(i, constructor);
+                        found = true;
+                    }
+                    // Allow a null constructor reference to abort conversion attempts
+                    break;
+                }
+            }
+        }
 
         // If the i'th argument didn't load normally and we couldn't find any way to convert the
         // given argument, we can't help with the load.

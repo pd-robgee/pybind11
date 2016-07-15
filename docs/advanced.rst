@@ -669,6 +669,20 @@ With this registration in place, our python code can now call ``square(a)`` and
 call the functions with a ``double`` and a ``PrivateType`` (where PrivateType
 is not exposed via pybind11).
 
+In the special case that the C++ class ``A`` is a (public) subclass of ``B``,
+rather than creating a new C++ ``B`` instance when required, pybind11 performs
+an upcast from the ``A`` instance to the base class ``B`` so that the function
+is called with the actual ``B`` base class instance, not a copy of it.
+pybind11 also supports recursive base class upcasting: that is, if ``A``
+inherits from ``B`` inherits from ``C``, then
+
+.. code-block:: cpp
+
+    py::implicitly_convertible<A, B>();
+    py::implicitly_convertible<B, C>();
+
+also enables pybind11 to upcast an ``A`` instance to a C++ ``C`` instance.
+
 .. seealso::
 
     The file :file:`example/example20.cpp` contains a complete example that

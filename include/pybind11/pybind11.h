@@ -1192,6 +1192,46 @@ implicitly_convertible_cpp(detail::type_info &) {
     pybind11_fail("implicitly_convertible: C++ implicit conversion from " + type_id<InputType>() +
             " to " + type_id<OutputType>() + " is not valid");
 }
+
+template <class InputType, class OutputType>
+typename std::enable_if<!detail::is_accessible_base_of<OutputType, InputType>::value>::type
+implicitly_convertible_base(detail::type_info *) { /* We won't actually get here */ }
+
+template <class InputType, class OutputType>
+typename std::enable_if<detail::is_accessible_base_of<OutputType, InputType>::value>::type
+implicitly_convertible_base(detail::type_info *input_type) {
+    std::type_index in_idx(typeid(InputType)), out_idx(typeid(OutputType));
+    auto &upcasters = get_internals().upcast_conversions_cpp;
+    auto &upcast_start = get_internals().upcast_conversions_python_types;
+
+    // Put subclasses before base classes so that we hit them first when finding the starting
+    // C++ upcast type
+    if (input_type) {
+        auto it = upcast_start.begin();
+        while (it != upcast_start.end() && !PyType_IsSubtype(input_type->type, it->first))
+            ++it;
+        upcast_start.emplace(it, input_type->type, in_idx);
+    }
+
+    upcasters[in_idx][out_idx] = {
+        [](void *derived) { return (void *) static_cast<OutputType*>((InputType *) derived); }
+    };
+    // We just added a new upcaster, which might enable chained upcasters that we previously
+    // found to be unattainable, or might give better (i.e. shorter) upcasting chains, so remove
+    // any cached empty and multi-chain upcasts.
+    for (auto &in_out_caster : upcasters) {
+        // (Removal while iterating without changing order is not guaranteed before C++14)
+        std::vector<std::type_index> to_remove;
+        for (auto &out_caster : in_out_caster.second) {
+            if (out_caster.second.size() != 1)
+                to_remove.push_back(out_caster.first);
+        }
+        for (auto remove : to_remove) {
+            in_out_caster.second.erase(remove);
+        }
+    }
+}
+
 NAMESPACE_END(detail)
 
 template <typename InputType, typename OutputType>
@@ -1211,14 +1251,22 @@ void implicitly_convertible() {
         });
     }
     else {
-        // Otherwise our OutputType is an unregistered type: require InputType to be registered,
-        // because otherwise this is pointless.
         auto *input_type = detail::get_type_info(typeid(InputType));
-        if (!input_type)
-            pybind11_fail("implicitly_convertible: input type " + type_id<InputType>() + " is not a pybind11-registered type");
+        if (detail::is_accessible_base_of<OutputType, InputType>::value) {
+            // Base class implicit "conversion"--this doesn't actually do implicit conversion, but
+            // rather converts a derived InputType pointer to its base class OutputType pointer.
+            detail::implicitly_convertible_base<InputType, OutputType>(input_type);
+        }
+        else {
+            // Otherwise our OutputType is an unregistered type: require InputType to be registered,
+            // because otherwise this is pointless.
+            auto *input_type = detail::get_type_info(typeid(InputType));
+            if (!input_type)
+                pybind11_fail("implicitly_convertible: input type " + type_id<InputType>() + " is not a pybind11-registered type");
 
 
-        detail::implicitly_convertible_cpp<InputType, OutputType>(*input_type);
+            detail::implicitly_convertible_cpp<InputType, OutputType>(*input_type);
+        }
     }
 }
 

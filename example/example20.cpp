@@ -93,6 +93,28 @@ public:
     operator long() const { return 444; }
 };
 
+// Implicit base class casting
+class Ex20_H1 {
+public:
+    explicit Ex20_H1(int value) : value{value} {}
+    int val() const { return value; }
+protected:
+    int value{-1};
+};
+class Ex20_H2 : public Ex20_H1 {
+public:
+    Ex20_H2(int value) : Ex20_H1(value) {}
+    void increment() { value++; }
+};
+class Ex20_H3 {};
+class Ex20_H4 : public Ex20_H3, public Ex20_H2 {
+public:
+    Ex20_H4(int value) : Ex20_H2(value) {}
+};
+
+
+
+
 void print_double(double d) { std::cout << d << std::endl; }
 void print_long(long l) { std::cout << l << std::endl; }
 void print_string(const std::string &s) { std::cout << s << std::endl; }
@@ -171,4 +193,14 @@ void init_ex20(py::module &m) {
     py::implicitly_convertible<Ex20_G1, long>();
     py::implicitly_convertible<Ex20_G3, long>();
     py::implicitly_convertible<Ex20_G4, long>();
+
+    // When implicitly_convertible is given a derived and base class, it should "convert" via base
+    // pointer casting, i.e. NOT via creating a new object.
+    py::class_<Ex20_H4> h4(m, "Ex20_H4");
+    h4.def(py::init<int>());
+    m.def("increment_h2", [](Ex20_H2 &h2) { h2.increment(); });
+    m.def("print_h1", [](const Ex20_H1 &h1) { std::cout << h1.val() << "\n"; });
+    py::implicitly_convertible<Ex20_H4, Ex20_H3>();
+    py::implicitly_convertible<Ex20_H4, Ex20_H2>();
+    py::implicitly_convertible<Ex20_H2, Ex20_H1>();
 }

@@ -274,6 +274,13 @@ struct internals {
     std::unordered_set<std::pair<const PyObject *, const char *>, overload_hash> inactive_overload_cache;
     std::forward_list<void (*) (std::exception_ptr)> registered_exception_translators;
     std::unordered_map<std::type_index, implicit_conversion_cpp_functions> implicit_conversions_cpp;
+    // From -> to upcasting chains.  Directly declared upcasts chains have length 1; derived chains
+    // (calculated on demand) have length > 1, and previously-attempted, failed upcast paths have length 0.
+    std::unordered_map<std::type_index, std::unordered_map<std::type_index, std::vector<void *(*)(void *)>>>
+        upcast_conversions_cpp;
+    // The set of registered python types that support implicit C++ upcasts; given a Python type,
+    // this tells us where to start looking in `upcast_conversions_cpp`.
+    std::vector<std::pair<PyTypeObject *, std::type_index>> upcast_conversions_python_types;
 #if defined(WITH_THREAD)
     decltype(PyThread_create_key()) tstate = 0; // Usually an int but a long on Cygwin64 with Python 3.x
     PyInterpreterState *istate = nullptr;
@@ -304,6 +311,21 @@ template <typename T, size_t N> struct intrinsic_type<T[N]>       { typedef type
 
 /// Helper type to replace 'void' in some expressions
 struct void_type { };
+
+/** Helper template to determine whether a Derived type is castable to a Base type.  std::is_base_of
+ * is only part of this: we also require that static_cast<Base *>(Derived *derived) is well-formed,
+ * which it won't be for protected/private inheritance, and for multiple non-virtual inheritance of
+ * a common base class.
+ */
+template <class Base, class Derived, typename SFINAE = void>
+class is_accessible_base_of : public std::false_type {};
+template <class Base, class Derived>
+class is_accessible_base_of<Base, Derived, typename std::enable_if<
+    !std::is_same<Base, Derived>::value &&
+    std::is_base_of<Base, Derived>::value &&
+    std::is_same<Base*, decltype(static_cast<Base*>((Derived*) nullptr))>::value
+    >::type>
+   : public std::true_type {};
 
 NAMESPACE_END(detail)
 
