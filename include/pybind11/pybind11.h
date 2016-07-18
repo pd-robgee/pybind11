@@ -451,15 +451,15 @@ protected:
             /* When an exception is caught, give each registered exception
                translator a chance to translate it to a Python exception
                in reverse order of registration.
-              
+
                A translator may choose to do one of the following:
-              
+
                 - catch the exception and call PyErr_SetString or PyErr_SetObject
                   to set a standard (or custom) Python exception, or
                 - do nothing and let the exception fall through to the next translator, or
                 - delegate translation to the next translator by throwing a new type of exception. */
 
-            auto last_exception = std::current_exception(); 
+            auto last_exception = std::current_exception();
             auto &registered_exception_translators = pybind11::detail::get_internals().registered_exception_translators;
             for (auto& translator : registered_exception_translators) {
                 try {
@@ -475,18 +475,38 @@ protected:
         }
 
         if (result.ptr() == PYBIND11_TRY_NEXT_OVERLOAD) {
-            std::string msg = "Incompatible function arguments. The "
-                              "following argument types are supported:\n";
+            std::string msg = "Incompatible " + std::string(overloads->is_constructor ? "constructor" : "function") +
+                              " arguments. The following argument types are supported:\n";
             int ctr = 0;
             for (detail::function_record *it2 = overloads; it2 != nullptr; it2 = it2->next) {
                 msg += "    "+ std::to_string(++ctr) + ". ";
-                msg += it2->signature;
+
+                bool wrote_sig = false;
+                if (overloads->is_constructor) {
+                    // For a constructor, rewrite `(Object, arg0, ...) -> NoneType` as `Object(arg0, ...)`
+                    std::string sig = it2->signature;
+                    size_t start = sig.find('(') + 1;
+                    if (start < sig.size()) {
+                        // End at the , for the next argument
+                        size_t end = sig.find(", "), next = end + 2;
+                        size_t ret = sig.rfind(" -> ");
+                        // Or the ), if there is no comma:
+                        if (end >= sig.size()) next = end = sig.find(')');
+                        if (start < end && next < sig.size()) {
+                            msg.append(sig, start, end - start);
+                            msg += '(';
+                            msg.append(sig, next, ret - next);
+                            wrote_sig = true;
+                        }
+                    }
+                }
+                if (!wrote_sig) msg += it2->signature;
+
                 msg += "\n";
             }
             msg += "    Invoked with: ";
             tuple args_(args, true);
-            for( std::size_t ti = 0; ti != args_.size(); ++ti)
-            {
+            for (size_t ti = overloads->is_constructor ? 1 : 0; ti < args_.size(); ++ti) {
                 msg += static_cast<std::string>(static_cast<object>(args_[ti]).str());
                 if ((ti + 1) != args_.size() )
                     msg += ", ";
