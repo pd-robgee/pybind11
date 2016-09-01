@@ -173,8 +173,7 @@ public:
     }
 
     PYBIND11_NOINLINE static handle cast(const void *_src, return_value_policy policy, handle parent,
-                                         const std::type_info *type_info,
-                                         const std::type_info *type_info_backup,
+                                         const detail::type_info *tinfo,
                                          void *(*copy_constructor)(const void *),
                                          void *(*move_constructor)(const void *),
                                          const void *existing_holder = nullptr) {
@@ -183,23 +182,6 @@ public:
             return handle(Py_None).inc_ref();
 
         auto &internals = get_internals();
-
-        auto it = internals.registered_types_cpp.find(std::type_index(*type_info));
-        if (it == internals.registered_types_cpp.end()) {
-            type_info = type_info_backup;
-            it = internals.registered_types_cpp.find(std::type_index(*type_info));
-        }
-
-        if (it == internals.registered_types_cpp.end()) {
-            std::string tname = type_info->name();
-            detail::clean_type_id(tname);
-            std::string msg = "Unregistered type : " + tname;
-            PyErr_SetString(PyExc_TypeError, msg.c_str());
-            return handle();
-        }
-
-        auto tinfo = (const detail::type_info *) it->second;
-
         auto it_instances = internals.registered_instances.equal_range(src);
         for (auto it_i = it_instances.first; it_i != it_instances.second; ++it_i) {
             auto instance_type = detail::get_type_info(Py_TYPE(it_i->second), false);
@@ -247,6 +229,56 @@ protected:
     const type_info *typeinfo = nullptr;
     void *value = nullptr;
     object temp;
+
+    PYBIND11_NOINLINE static const detail::type_info *get_cached_ret_type(
+            const detail::type_info **cache, const std::type_info *type_info, const std::type_info *type_info_backup) {
+
+        if (cache && *cache) return *cache;
+
+        const detail::type_info *tinfo = nullptr;
+        auto &internals = get_internals();
+        for (const std::type_info *t : {type_info, type_info_backup}) {
+            if (t) {
+                auto it = internals.registered_types_cpp.find(std::type_index(*t));
+                if (it != internals.registered_types_cpp.end()) {
+                    tinfo = static_cast<const detail::type_info *>(it->second);
+                    break;
+                }
+            }
+        }
+
+        if (tinfo) {
+            if (cache) *cache = tinfo;
+            return tinfo;
+        }
+
+        std::string tname = type_info->name();
+        detail::clean_type_id(tname);
+        std::string msg = "Unregistered type : " + tname;
+        PyErr_SetString(PyExc_TypeError, msg.c_str());
+        return nullptr;
+    }
+};
+
+// Wrapper class around a type_caster for a return value that takes a cache variable.  The default
+// implementation does nothing with the cache; the specialized version for
+// type_caster_generic-derived types passes the cache variable through.
+template <typename TypeCaster, typename SFINAE = void>
+class return_value_caster {
+public:
+    template <typename... Args>
+    inline static handle cast(const detail::type_info **, Args&&... args) {
+        return TypeCaster::cast(std::forward<Args>(args)...);
+    }
+};
+
+template <typename TypeCaster>
+class return_value_caster<TypeCaster, typename std::enable_if<std::is_base_of<type_caster_generic, TypeCaster>::value>::type> {
+public:
+    template <typename... Args>
+    inline static handle cast(const detail::type_info **ret_type_cache, Args&&... args) {
+        return TypeCaster::cast(std::forward<Args>(args)..., ret_type_cache);
+    }
 };
 
 /* Determine suitable casting operator */
@@ -262,22 +294,25 @@ public:
 
     type_caster_base() : type_caster_generic(typeid(type)) { }
 
-    static handle cast(const type &src, return_value_policy policy, handle parent) {
+    static handle cast(const type &src, return_value_policy policy, handle parent, const detail::type_info **ret_type_cache = nullptr) {
         if (policy == return_value_policy::automatic || policy == return_value_policy::automatic_reference)
             policy = return_value_policy::copy;
-        return cast(&src, policy, parent);
+        return cast(&src, policy, parent, ret_type_cache);
     }
 
-    static handle cast(type &&src, return_value_policy policy, handle parent) {
+    static handle cast(type &&src, return_value_policy policy, handle parent, const detail::type_info **ret_type_cache = nullptr) {
         if (policy == return_value_policy::automatic || policy == return_value_policy::automatic_reference)
             policy = return_value_policy::move;
-        return cast(&src, policy, parent);
+        return cast(&src, policy, parent, ret_type_cache);
     }
 
-    static handle cast(const type *src, return_value_policy policy, handle parent) {
-        return type_caster_generic::cast(
-            src, policy, parent, src ? &typeid(*src) : nullptr, &typeid(type),
-            make_copy_constructor(src), make_move_constructor(src));
+    static handle cast(const type *src, return_value_policy policy, handle parent, const detail::type_info **ret_type_cache = nullptr) {
+
+        const detail::type_info *ret_type = get_cached_ret_type(ret_type_cache, src ? &typeid(*src) : nullptr, &typeid(type));
+        if (!ret_type) return handle(); // PyErr is already set
+
+        return type_caster_generic::cast(src, policy, parent,
+            ret_type, make_copy_constructor(src), make_move_constructor(src));
     }
 
     template <typename T> using cast_op_type = pybind11::detail::cast_op_type<T>;
@@ -313,8 +348,8 @@ template <typename type> using make_caster = type_caster<intrinsic_t<type>>;
 
 template <typename type> class type_caster<std::reference_wrapper<type>> : public type_caster_base<type> {
 public:
-    static handle cast(const std::reference_wrapper<type> &src, return_value_policy policy, handle parent) {
-        return type_caster_base<type>::cast(&src.get(), policy, parent);
+    static handle cast(const std::reference_wrapper<type> &src, return_value_policy policy, handle parent, const detail::type_info **ret_type_cache = nullptr) {
+        return type_caster_base<type>::cast(&src.get(), policy, parent, ret_type_cache);
     }
     template <typename T> using cast_op_type = std::reference_wrapper<type>;
     operator std::reference_wrapper<type>() { return std::ref(*((type *) this->value)); }
@@ -787,11 +822,13 @@ public:
     explicit operator holder_type&() { return holder; }
     #endif
 
-    static handle cast(const holder_type &src, return_value_policy, handle) {
-        return type_caster_generic::cast(
-            src.get(), return_value_policy::take_ownership, handle(),
-            src.get() ? &typeid(*src.get()) : nullptr, &typeid(type),
-            nullptr, nullptr, &src);
+    static handle cast(const holder_type &src, return_value_policy, handle, const detail::type_info **ret_type_cache = nullptr) {
+
+        const detail::type_info *ret_type = type_caster_generic::get_cached_ret_type(ret_type_cache, src.get() ? &typeid(*src.get()) : nullptr, &typeid(type));
+        if (!ret_type) return handle(); // PyErr is already set
+
+        return type_caster_generic::cast(src.get(), return_value_policy::take_ownership, handle(),
+            ret_type, nullptr, nullptr, &src);
     }
 
 protected:

@@ -124,8 +124,8 @@ protected:
                                         ? &rec->data : rec->data[0]);
 
             /* Perform the function call */
-            handle result = cast_out::cast(args_converter.template call<Return>(cap->f),
-                                           rec->policy, parent);
+            handle result = detail::return_value_caster<cast_out>::cast(&rec->ret_type_cache,
+                    args_converter.template call<Return>(cap->f), rec->policy, parent);
 
             /* Invoke call policy post-call hook */
             detail::process_attributes<Extra...>::postcall(args, result);
