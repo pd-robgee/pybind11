@@ -28,6 +28,7 @@ struct type_info {
     std::vector<PyObject *(*)(PyObject *, PyTypeObject *) > implicit_conversions;
     buffer_info *(*get_buffer)(PyObject *, void *) = nullptr;
     void *get_buffer_data = nullptr;
+    bool always_copy = false;
 };
 
 PYBIND11_NOINLINE inline internals &get_internals() {
@@ -182,11 +183,14 @@ public:
             return handle(Py_None).inc_ref();
 
         auto &internals = get_internals();
-        auto it_instances = internals.registered_instances.equal_range(src);
-        for (auto it_i = it_instances.first; it_i != it_instances.second; ++it_i) {
-            auto instance_type = detail::get_type_info(Py_TYPE(it_i->second), false);
-            if (instance_type && instance_type == tinfo)
-                return handle((PyObject *) it_i->second).inc_ref();
+
+        if (!tinfo->always_copy) {
+            auto it_instances = internals.registered_instances.equal_range(src);
+            for (auto it_i = it_instances.first; it_i != it_instances.second; ++it_i) {
+                auto instance_type = detail::get_type_info(Py_TYPE(it_i->second), false);
+                if (instance_type && instance_type == tinfo)
+                    return handle((PyObject *) it_i->second).inc_ref();
+            }
         }
 
         object inst(PyType_GenericAlloc(tinfo->type, 0), false);
@@ -196,31 +200,39 @@ public:
         wrapper->value = src;
         wrapper->owned = true;
 
-        if (policy == return_value_policy::automatic)
-            policy = return_value_policy::take_ownership;
-        else if (policy == return_value_policy::automatic_reference)
-            policy = return_value_policy::reference;
-
-        if (policy == return_value_policy::copy) {
+        if (tinfo->always_copy) {
             wrapper->value = copy_constructor(wrapper->value);
             if (wrapper->value == nullptr)
-                throw cast_error("return_value_policy = copy, but the object is non-copyable!");
-        } else if (policy == return_value_policy::move) {
-            wrapper->value = move_constructor(wrapper->value);
-            if (wrapper->value == nullptr)
+                throw cast_error("type has always_copy set, but the object is non-copyable!");
+        }
+        else {
+            if (policy == return_value_policy::automatic)
+                policy = return_value_policy::take_ownership;
+            else if (policy == return_value_policy::automatic_reference)
+                policy = return_value_policy::reference;
+
+            if (policy == return_value_policy::copy) {
                 wrapper->value = copy_constructor(wrapper->value);
-            if (wrapper->value == nullptr)
-                throw cast_error("return_value_policy = move, but the object is neither movable nor copyable!");
-        } else if (policy == return_value_policy::reference) {
-            wrapper->owned = false;
-        } else if (policy == return_value_policy::reference_internal) {
-            wrapper->owned = false;
-            detail::keep_alive_impl(inst, parent);
+                if (wrapper->value == nullptr)
+                    throw cast_error("return_value_policy = copy, but the object is non-copyable!");
+            } else if (policy == return_value_policy::move) {
+                wrapper->value = move_constructor(wrapper->value);
+                if (wrapper->value == nullptr)
+                    wrapper->value = copy_constructor(wrapper->value);
+                if (wrapper->value == nullptr)
+                    throw cast_error("return_value_policy = move, but the object is neither movable nor copyable!");
+            } else if (policy == return_value_policy::reference) {
+                wrapper->owned = false;
+            } else if (policy == return_value_policy::reference_internal) {
+                wrapper->owned = false;
+                detail::keep_alive_impl(inst, parent);
+            }
         }
 
         tinfo->init_holder(inst.ptr(), existing_holder);
 
-        internals.registered_instances.emplace(wrapper->value, inst.ptr());
+        if ((wrapper->registered = !tinfo->always_copy))
+            internals.registered_instances.emplace(wrapper->value, inst.ptr());
 
         return inst.release();
     }

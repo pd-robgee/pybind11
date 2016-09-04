@@ -632,6 +632,7 @@ protected:
         tinfo->type = (PyTypeObject *) type;
         tinfo->type_size = rec->type_size;
         tinfo->init_holder = rec->init_holder;
+        tinfo->always_copy = rec->always_copy;
         internals.registered_types_cpp[tindex] = tinfo;
         internals.registered_types_py[type] = tinfo;
 
@@ -732,25 +733,28 @@ protected:
         self->value = ::operator new(tinfo->type_size);
         self->owned = true;
         self->constructed = false;
-        detail::get_internals().registered_instances.emplace(self->value, (PyObject *) self);
+        self->registered = !tinfo->always_copy;
+        if (self->registered)
+            detail::get_internals().registered_instances.emplace(self->value, (PyObject *) self);
         return (PyObject *) self;
     }
 
     static void dealloc(instance<void> *self) {
         if (self->value) {
-            auto instance_type = Py_TYPE(self);
-            auto &registered_instances = detail::get_internals().registered_instances;
-            auto range = registered_instances.equal_range(self->value);
-            bool found = false;
-            for (auto it = range.first; it != range.second; ++it) {
-                if (instance_type == Py_TYPE(it->second)) {
-                    registered_instances.erase(it);
-                    found = true;
-                    break;
+            if (self->registered) {
+                auto &registered_instances = detail::get_internals().registered_instances;
+                auto range = registered_instances.equal_range(self->value);
+                bool found = false;
+                for (auto it = range.first; it != range.second; ++it) {
+                    if (Py_TYPE(self) == Py_TYPE(it->second)) {
+                        registered_instances.erase(it);
+                        found = true;
+                        break;
+                    }
                 }
+                if (!found)
+                    pybind11_fail("generic_type::dealloc(): Tried to deallocate unregistered instance!");
             }
-            if (!found)
-                pybind11_fail("generic_type::dealloc(): Tried to deallocate unregistered instance!");
 
             if (self->weakrefs)
                 PyObject_ClearWeakRefs((PyObject *) self);
