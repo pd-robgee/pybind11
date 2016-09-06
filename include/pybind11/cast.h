@@ -236,7 +236,8 @@ public:
 
         tinfo->init_holder(inst.ptr(), existing_holder);
 
-        if ((wrapper->registered = !tinfo->no_reference))
+        wrapper->registered = !tinfo->no_reference;
+        if (wrapper->registered)
             internals.registered_instances.emplace(wrapper->value, inst.ptr());
 
         return inst.release();
