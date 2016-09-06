@@ -32,8 +32,8 @@ struct sibling { handle value; sibling(const handle &value) : value(value.ptr())
 /// Annotation indicating that a class derives from another given type
 template <typename T> struct base { };
 
-/// Annotation indicating that the class is always copied, never returned by reference
-struct always_copy { };
+/// class_ template argument to force always-copy/move behaviour, and thus avoid instance tracking
+struct no_reference {};
 
 /// Keep patient alive while nurse lives
 template <int Nurse, int Patient> struct keep_alive { };
@@ -150,8 +150,8 @@ struct type_record {
     /// Optional docstring
     const char *doc = nullptr;
 
-    /// Forces copying when returning instances of this type to Python
-    bool always_copy = false;
+    /// Forces copying (or moving) when returning instances of this type, and avoid instance tracking
+    bool no_reference = false;
 };
 
 /**
@@ -256,16 +256,6 @@ struct process_attribute<T, typename std::enable_if<std::is_base_of<handle, T>::
 template <typename T>
 struct process_attribute<base<T>> : process_attribute_default<base<T>> {
     static void init(const base<T> &, type_record *r) { r->base_type = &typeid(T); }
-};
-
-/** Process a always_copy type attribute which forces copying when an instance is returned to
- * Python; this is like specifying return_value_policy::copy on every function returning this type,
- * except that it *also* disables instance tracking (since that is not required if we never return
- * by reference).
- */
-template <>
-struct process_attribute<always_copy> : process_attribute_default<always_copy> {
-    static void init(const always_copy &, type_record *r) { r->always_copy = true; }
 };
 
 /***

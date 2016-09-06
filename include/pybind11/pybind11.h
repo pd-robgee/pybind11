@@ -632,7 +632,7 @@ protected:
         tinfo->type = (PyTypeObject *) type;
         tinfo->type_size = rec->type_size;
         tinfo->init_holder = rec->init_holder;
-        tinfo->always_copy = rec->always_copy;
+        tinfo->no_reference = rec->no_reference;
         internals.registered_types_cpp[tindex] = tinfo;
         internals.registered_types_py[type] = tinfo;
 
@@ -733,7 +733,7 @@ protected:
         self->value = ::operator new(tinfo->type_size);
         self->owned = true;
         self->constructed = false;
-        self->registered = !tinfo->always_copy;
+        self->registered = !tinfo->no_reference;
         if (self->registered)
             detail::get_internals().registered_instances.emplace(self->value, (PyObject *) self);
         return (PyObject *) self;
@@ -827,11 +827,13 @@ class class_ : public detail::generic_type {
     template <typename T> using is_holder = detail::is_holder_type<type_, T>;
     template <typename T> using is_subtype = detail::bool_constant<std::is_base_of<type_, T>::value && !std::is_same<T, type_>::value>;
     template <typename T> using is_base_class = detail::bool_constant<std::is_base_of<T, type_>::value && !std::is_same<T, type_>::value>;
+    template <typename T> using is_no_ref = std::is_same<T, no_reference>;
     template <typename T> using is_valid_class_option =
         detail::bool_constant<
             is_holder<T>::value ||
             is_subtype<T>::value ||
-            is_base_class<T>::value
+            is_base_class<T>::value ||
+            is_no_ref<T>::value
         >;
 
     using extracted_holder_t = typename detail::first_of_t<is_holder, options...>;
@@ -865,6 +867,7 @@ public:
         record.instance_size = sizeof(instance_type);
         record.init_holder = init_holder;
         record.dealloc = dealloc;
+        record.no_reference = detail::any_of_t<is_no_ref, options...>::value;
 
         detail::class_selector<is_base_class, options...>::set_bases(record);
 

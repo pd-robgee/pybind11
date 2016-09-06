@@ -28,7 +28,7 @@ struct type_info {
     std::vector<PyObject *(*)(PyObject *, PyTypeObject *) > implicit_conversions;
     buffer_info *(*get_buffer)(PyObject *, void *) = nullptr;
     void *get_buffer_data = nullptr;
-    bool always_copy = false;
+    bool no_reference = false;
 };
 
 PYBIND11_NOINLINE inline internals &get_internals() {
@@ -184,7 +184,7 @@ public:
 
         auto &internals = get_internals();
 
-        if (!tinfo->always_copy) {
+        if (!tinfo->no_reference) {
             auto it_instances = internals.registered_instances.equal_range(src);
             for (auto it_i = it_instances.first; it_i != it_instances.second; ++it_i) {
                 auto instance_type = detail::get_type_info(Py_TYPE(it_i->second), false);
@@ -197,15 +197,19 @@ public:
 
         auto wrapper = (instance<void> *) inst.ptr();
 
-        wrapper->value = src;
         wrapper->owned = true;
 
-        if (tinfo->always_copy) {
-            wrapper->value = copy_constructor(wrapper->value);
+        if (tinfo->no_reference) {
+            wrapper->value = nullptr;
+            if (policy == return_value_policy::move)
+                wrapper->value = move_constructor(src);
             if (wrapper->value == nullptr)
-                throw cast_error("type has always_copy set, but the object is non-copyable!");
+                wrapper->value = copy_constructor(src);
+            if (wrapper->value == nullptr)
+                throw cast_error("type is declared `no_reference`, but the object is not movable/copyable!");
         }
         else {
+            wrapper->value = src;
             if (policy == return_value_policy::automatic)
                 policy = return_value_policy::take_ownership;
             else if (policy == return_value_policy::automatic_reference)
@@ -231,7 +235,7 @@ public:
 
         tinfo->init_holder(inst.ptr(), existing_holder);
 
-        if ((wrapper->registered = !tinfo->always_copy))
+        if ((wrapper->registered = !tinfo->no_reference))
             internals.registered_instances.emplace(wrapper->value, inst.ptr());
 
         return inst.release();
