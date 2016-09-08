@@ -831,9 +831,8 @@ class class_ : public detail::generic_type {
         >;
 
 public:
-    using type = type_;
-    using type_alias = detail::first_of_t<is_subtype, void, options...>;
-    constexpr static bool has_alias = !std::is_void<type_alias>::value;
+    using base_type = type_;
+    using type = detail::first_of_t<is_subtype, base_type, options...>;
     using holder_type = detail::first_of_t<is_holder, std::unique_ptr<type>, options...>;
     using instance_type = detail::instance<type, holder_type>;
 
@@ -863,9 +862,9 @@ public:
 
         detail::generic_type::initialize(&record);
 
-        if (has_alias) {
+        if (!std::is_same<base_type, type>::value) {
             auto &instances = pybind11::detail::get_internals().registered_types_cpp;
-            instances[std::type_index(typeid(type_alias))] = instances[std::type_index(typeid(type))];
+            instances[std::type_index(typeid(base_type))] = instances[std::type_index(typeid(type))];
         }
     }
 
@@ -1107,34 +1106,11 @@ private:
 
 NAMESPACE_BEGIN(detail)
 template <typename... Args> struct init {
-    template <typename Class, typename... Extra, typename std::enable_if<!Class::has_alias, int>::type = 0>
+    template <typename Class, typename... Extra>
     void execute(Class &cl, const Extra&... extra) const {
-        using Base = typename Class::type;
+        using Type = typename Class::type;
         /// Function which calls a specific C++ in-place constructor
-        cl.def("__init__", [](Base *self_, Args... args) { new (self_) Base(args...); }, extra...);
-    }
-
-    template <typename Class, typename... Extra,
-              typename std::enable_if<Class::has_alias &&
-                                       std::is_constructible<typename Class::type, Args...>::value, int>::type = 0>
-    void execute(Class &cl, const Extra&... extra) const {
-        using Base = typename Class::type;
-        using Alias = typename Class::type_alias;
-        handle cl_type = cl;
-        cl.def("__init__", [cl_type](handle self_, Args... args) {
-                if (self_.get_type() == cl_type)
-                    new (self_.cast<Base *>()) Base(args...);
-                else
-                    new (self_.cast<Alias *>()) Alias(args...);
-            }, extra...);
-    }
-
-    template <typename Class, typename... Extra,
-              typename std::enable_if<Class::has_alias &&
-                                      !std::is_constructible<typename Class::type, Args...>::value, int>::type = 0>
-    void execute(Class &cl, const Extra&... extra) const {
-        using Alias = typename Class::type_alias;
-        cl.def("__init__", [](Alias *self_, Args... args) { new (self_) Alias(args...); }, extra...);
+        cl.def("__init__", [](Type *self_, Args... args) { new (self_) Type(args...); }, extra...);
     }
 };
 
