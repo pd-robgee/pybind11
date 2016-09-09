@@ -214,6 +214,61 @@ The following interactive session shows how to call them from Python.
     that demonstrates how to work with callbacks and anonymous functions in
     more detail.
 
+Class option annotations
+========================
+
+The :class:`class_` object takes as template parameters the C++ type followed
+by various class options, such as a class's base type.  In most cases, pybind11
+is able to infer the meaning of an option by its type: for example, passing a
+base class as an option is detected as a base class, passing a derived class
+as an option is detected as a trampoline class, and passing a holder type is
+detected as the holder type.
+
+It is also possible to explicitly tag such options.  This has two advantages:
+first, it makes the code self-descriptive as to what each option is doing;
+second, it allows pybind11 to give me more specific compilation errors if a
+type is invalid, for example, if type tagged as a base class is not actually a
+base class.
+
+The order of options (whether tagged or implicit) is irrelevant.
+
+Suppose ``Dog`` is derived from the pybind11-registered class ``Animal``, and
+that ``PyDog`` is a trampoline class declared for ``Dog``, and that
+``std::shared_ptr<T>`` has been declared as a holder type.  Then the following
+are equivalent declarations:
+
+.. code-block:: cpp
+
+    py::class_<Dog, Pet, std::shared_ptr<Dog>, PyDog>(m, "Dog");
+    py::class_<Dog, py::holder<std::shared_ptr<Dog>>, py::alias<PyDog>, py::base<Pet>>(m, "Dog");
+
+The following table gives a brief description of the tags available.  ``T``
+here refers to the C++ class being registered (i.e. the first :class:`class_`
+template parameter).
+
+.. tabularcolumns:: |p{0.4\textwidth}|p{0.55\textwidth}|
+
++----------------------------------+----------------------------------------------------------------------------+
+| :class:`class_` option tag       | Description                                                                |
++==================================+============================================================================+
+| :class:`py::base<B>`             | This is used to indicate that the class ``B`` is a base class of the class |
+|                                  | being registered.  It can also be specified directly as ``B`` in the       |
+|                                  | :class:`class_` template option list.                                      |
++----------------------------------+----------------------------------------------------------------------------+
+| :class:`py::holder<H>`           | Specifies that ``H`` is the holder type for instances of type ``B``.  Can  |
+|                                  | also be specified directly as a :class:`class_` template option.  Note     |
+|                                  | that the holder must be either a ``std::unique_ptr<T, ...>`` or another    |
+|                                  | registered holder type (see :ref:`smart_pointers` for details).            |
++----------------------------------+----------------------------------------------------------------------------+
+| :class:`py::alias<PyA>`          | Used to declare a "trampoline" alias.  ``PyA`` must be derived from ``T``  |
+|                                  | and will be initialized as needed.  Can also be specified directly as a    |
+|                                  | :class:`class_` template option.  See :ref:`overriding_virtual` for more   |
+|                                  | details.                                                                   |
++----------------------------------+----------------------------------------------------------------------------+
+
+
+.. _overriding_virtual:
+
 Overriding virtual functions in Python
 ======================================
 

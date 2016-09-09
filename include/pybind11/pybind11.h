@@ -803,11 +803,18 @@ protected:
     static void releasebuffer(PyObject *, Py_buffer *view) { delete (buffer_info *) view->internal; }
 };
 
+// Extracts a type from either the type itself, or one of the class_ option decorators
+template <typename T> struct class_option { using type = T; };
+template <typename T> struct class_option<alias<T>> { using type = T; };
+template <typename T> struct class_option<base<T>> { using type = T; };
+template <typename T> struct class_option<holder<T>> { using type = T; };
+template <typename T> using class_option_t = typename class_option<T>::type;
+
 template <template<typename> class Predicate, typename... BaseTypes> struct class_selector;
 template <template<typename> class Predicate, typename Base, typename... Bases>
 struct class_selector<Predicate, Base, Bases...> {
     static inline void set_bases(detail::type_record &record) {
-        if (Predicate<Base>::value) record.base_type = &typeid(Base);
+        if (Predicate<Base>::value) record.base_type = &typeid(class_option_t<Base>);
         else class_selector<Predicate, Bases...>::set_bases(record);
     }
 };
@@ -820,28 +827,49 @@ NAMESPACE_END(detail)
 
 template <typename type_, typename... options>
 class class_ : public detail::generic_type {
-    template <typename T> using is_holder = detail::is_holder_type<type_, T>;
-    template <typename T> using is_subtype = detail::bool_constant<std::is_base_of<type_, T>::value && !std::is_same<T, type_>::value>;
-    template <typename T> using is_base_class = detail::bool_constant<std::is_base_of<T, type_>::value && !std::is_same<T, type_>::value>;
+    template <typename T> using option_t = detail::class_option_t<T>;
+    template <typename T> using is_holder = detail::is_holder_type<type_, option_t<T>>;
+    template <typename T> using is_type_alias = detail::bool_constant<
+        std::is_base_of<type_, option_t<T>>::value && !std::is_same<option_t<T>, type_>::value>;
+    template <typename T> using is_base_class = detail::bool_constant<
+        std::is_base_of<option_t<T>, type_>::value && !std::is_same<option_t<T>, type_>::value>;
+
+    // For wrapped options (e.g. `py::base<Base>`, `py::holder<std::unique_ptr<T>>`, etc.) provide
+    // an assertion failure if the tag doesn't match the class (e.g. `Base` isn't a base of type_).
+    // This lets us give a nicer failure message than just "invalid template parameters provided"
+    template <typename T> using is_invalid_base = detail::bool_constant<std::is_base_of<detail::base_tag, T>::value && !is_base_class<T>::value>;
+    static_assert(!detail::any_of_t<is_invalid_base, options...>::value,
+            "Invalid class_ base<...> option: given base type is not a base class of the type being registered");
+    template <typename T> using is_invalid_holder = detail::bool_constant<std::is_base_of<detail::holder_tag, T>::value && !is_holder<T>::value>;
+    static_assert(!detail::any_of_t<is_invalid_holder, options...>::value,
+            "Invalid class_ holder<...> option: given holder type is invalid (perhaps you need to use PYBIND11_DECLARE_HOLDER_TYPE?)");
+    template <typename T> using is_invalid_alias = detail::bool_constant<std::is_base_of<detail::alias_tag, T>::value && !is_type_alias<T>::value>;
+    static_assert(!detail::any_of_t<is_invalid_alias, options...>::value,
+            "Invalid class_ alias<...> option: given alias type is not a subclass of the type being registered");
+
     template <typename T> using is_valid_class_option =
         detail::bool_constant<
+            // Don't fail if we are already failing one of the above assertions:
+            is_invalid_base<T>::value ||
+            is_invalid_holder<T>::value ||
+            is_invalid_alias<T>::value ||
+            // Check remaining non-annotated options for validity:
             is_holder<T>::value ||
-            is_subtype<T>::value ||
+            is_type_alias<T>::value ||
             is_base_class<T>::value
         >;
-
-public:
-    using type = type_;
-    using type_alias = detail::first_of_t<is_subtype, void, options...>;
-    constexpr static bool has_alias = !std::is_void<type_alias>::value;
-    using holder_type = detail::first_of_t<is_holder, std::unique_ptr<type>, options...>;
-    using instance_type = detail::instance<type, holder_type>;
-
     static_assert(detail::all_of_t<is_valid_class_option, options...>::value,
             "Unknown/invalid class_ template parameters provided");
 
     static_assert(detail::count_t<is_base_class, options...>::value <= 1,
             "Invalid class_ base types: multiple inheritance is not supported");
+
+public:
+    using type = type_;
+    using type_alias = option_t<detail::first_of_t<is_type_alias, void, options...>>;
+    constexpr static bool has_alias = !std::is_void<type_alias>::value;
+    using holder_type = option_t<detail::first_of_t<is_holder, std::unique_ptr<type_>, options...>>;
+    using instance_type = detail::instance<type, holder_type>;
 
     PYBIND11_OBJECT(class_, detail::generic_type, PyType_Check)
 

@@ -2,7 +2,7 @@ import pytest
 
 
 def test_inheritance(msg):
-    from pybind11_tests import Pet, Dog, Rabbit, Hamster, dog_bark, pet_name_species
+    from pybind11_tests import Pet, Dog, Rabbit, Hamster, Cat, dog_bark, pet_name_species
 
     roger = Rabbit('Rabbit')
     assert roger.name() + " is a " + roger.species() == "Rabbit is a parrot"
@@ -18,6 +18,9 @@ def test_inheritance(msg):
 
     fred = Hamster('Fred')
     assert fred.name() + " is a " + fred.species() == "Fred is a rodent"
+
+    kallie = Cat('Kallie')
+    assert kallie.name() + " is a " + kallie.species() == "Kallie is a kitty"
 
     assert dog_bark(molly) == "Woof!"
 
