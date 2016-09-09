@@ -806,6 +806,7 @@ protected:
 // Extracts a type from either the type itself, or one of the class_ option decorators
 template <typename T> struct class_option { using type = T; };
 template <typename T> struct class_option<alias<T>> { using type = T; };
+template <typename T> struct class_option<init_alias<T>> { using type = T; };
 template <typename T> struct class_option<base<T>> { using type = T; };
 template <typename T> struct class_option<holder<T>> { using type = T; };
 template <typename T> using class_option_t = typename class_option<T>::type;
@@ -861,10 +862,13 @@ class class_ : public detail::generic_type {
     static_assert(detail::count_t<is_base_class, options...>::value <= 1,
             "Invalid class_ base types: multiple inheritance is not supported");
 
+    template <typename T> using is_init_alias = std::is_base_of<detail::init_alias_tag, T>;
+
 public:
     using type = type_;
     using type_alias = option_t<detail::first_of_t<is_type_alias, void, options...>>;
     constexpr static bool has_alias = !std::is_void<type_alias>::value;
+    constexpr static bool init_alias = detail::any_of_t<is_init_alias, options...>::value;
     using holder_type = option_t<detail::first_of_t<is_holder, std::unique_ptr<type_>, options...>>;
     using instance_type = detail::instance<type, holder_type>;
 
@@ -1134,7 +1138,7 @@ template <typename... Args> struct init {
     }
 
     template <typename Class, typename... Extra,
-              typename std::enable_if<Class::has_alias &&
+              typename std::enable_if<Class::has_alias && !Class::init_alias &&
                                        std::is_constructible<typename Class::type, Args...>::value, int>::type = 0>
     void execute(Class &cl, const Extra&... extra) const {
         using Base = typename Class::type;
@@ -1149,8 +1153,8 @@ template <typename... Args> struct init {
     }
 
     template <typename Class, typename... Extra,
-              typename std::enable_if<Class::has_alias &&
-                                      !std::is_constructible<typename Class::type, Args...>::value, int>::type = 0>
+              typename std::enable_if<Class::has_alias && (Class::init_alias ||
+                                      !std::is_constructible<typename Class::type, Args...>::value), int>::type = 0>
     void execute(Class &cl, const Extra&... extra) const {
         using Alias = typename Class::type_alias;
         cl.def("__init__", [](Alias *self_, Args... args) { new (self_) Alias(args...); }, extra...);

@@ -265,6 +265,10 @@ template parameter).
 |                                  | :class:`class_` template option.  See :ref:`overriding_virtual` for more   |
 |                                  | details.                                                                   |
 +----------------------------------+----------------------------------------------------------------------------+
+| :class:`py::init_alias<PyA>`     | Like :class:`py::alias<PyA>`, but always initializes the ``PyA`` class     |
+|                                  | when creating a ``T`` type from python code.  This tag for this option is  |
+|                                  | required.  See :ref:`ext_trampoline` for more details.                     |
++----------------------------------+----------------------------------------------------------------------------+
 
 
 .. _overriding_virtual:
@@ -531,6 +535,45 @@ can now create a python class that inherits from ``Dog``:
 
     See the file :file:`tests/test_virtual_functions.cpp` for complete examples
     using both the duplication and templated trampoline approaches.
+
+.. _ext_trampoline:
+
+Extended trampoline class functionality
+=======================================
+
+The trampoline classes described in the previous sections are, by default, only
+initialized when needed.  More specifically, they are initialized when a python
+class actually inherits from a registered type (instead of merely creating an
+instance of the registered type), or when a registered constructor is only
+valid for the trampoline class but not the registered class.  This is primarily
+for performance reasons: when the trampoline class is not needed for anything
+except virtual method dispatching, not initializing the trampoline class
+improves performance by avoiding a run-time check to see if the inheriting
+python instance has defined an overloaded method.
+
+Sometimes, however, it is useful to always initialize a trampoline class as an
+intermediate class that does more than just handle virtual method dispatching.
+For example, such a class might perform extra class initialization, extra
+destruction operations, and might define new members and methods to enable a
+more python-like interface to a class.
+
+In order to tell pybind11 that it should *always* initialize the trampoline
+class when creating new instances of a type, the trampoline class should be
+declared with a special ``py::init_alias<PyClass>`` template tag instead of
+just the ``PyClass`` or ``py::init<PyClass>`` template argument that would
+normally be used.
+
+For example, to enable full trampoline instantiation whenever a ``Mouse`` type
+is created in, you would registered the class as follows:
+
+.. code-block:: cpp
+
+    class Mouse { /* ... */ };
+    class PyMouse : public Mouse { /* ... */ };
+
+    py::class_<Mouse, py::init_alias<PyMouse>>(m, "Mouse")
+        // ... definitions here ...
+        ;
 
 .. _macro_notes:
 

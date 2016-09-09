@@ -30,9 +30,10 @@ struct name { const char *value; name(const char *value) : value(value) { } };
 struct sibling { handle value; sibling(const handle &value) : value(value.ptr()) { } };
 
 NAMESPACE_BEGIN(detail)
-// Base tag classes for the subsequent annotation structs
+// Base tag classes for the following annotation structs
 struct base_tag {};
 struct alias_tag {};
+struct init_alias_tag : alias_tag {};
 struct holder_tag {};
 NAMESPACE_END(detail)
 
@@ -49,6 +50,10 @@ template <typename T> struct base : detail::base_tag { using type = T; };
 /// class directly instead.
 template <typename T> struct alias : detail::alias_tag { using type = T; };
 
+/// Annotation wrapping a type alias that indicates that the alias should always be initialized
+/// (normally trampoline instances are only initialized when a python class inherits).
+template <typename T> struct init_alias : detail::init_alias_tag { using type = T; };
+
 /// Annotation wrapping a holder type.
 template <typename T> struct holder : detail::holder_tag { using type = T; };
 
@@ -62,7 +67,6 @@ enum op_type : int;
 struct undefined_t;
 template <op_id id, op_type ot, typename L = undefined_t, typename R = undefined_t> struct op_;
 template <typename... Args> struct init;
-template <typename... Args> struct init_alias;
 inline void keep_alive_impl(int Nurse, int Patient, handle args, handle ret);
 
 /// Internal data structure which holds metadata about a keyword argument
