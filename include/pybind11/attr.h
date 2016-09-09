@@ -29,8 +29,28 @@ struct name { const char *value; name(const char *value) : value(value) { } };
 /// Annotation indicating that a function is an overload associated with a given "sibling"
 struct sibling { handle value; sibling(const handle &value) : value(value.ptr()) { } };
 
-/// Annotation indicating that a class derives from another given type
-template <typename T> struct base { };
+NAMESPACE_BEGIN(detail)
+// Base tag classes for the subsequent annotation structs
+struct base_tag {};
+struct alias_tag {};
+struct holder_tag {};
+NAMESPACE_END(detail)
+
+// The following are types that can be passed as the class_ template options.  These are mostly
+// decorative (except as noted), but do have the effect of giving you a more specific error if you
+// specify, for example, a base class that isn't actually a base of the given type.
+
+// Annotation indicating that a class derives from another given type.  In addition to be a class_
+// template options, can be constructed and passed to the class_ constructor.
+/// is just decorative: you can simply pass the base class directly.
+template <typename T> struct base : detail::base_tag { using type = T; };
+
+/// Annotation wrapping a regular type alias.  Entirely decorative: you can just pass the trampoline
+/// class directly instead.
+template <typename T> struct alias : detail::alias_tag { using type = T; };
+
+/// Annotation wrapping a holder type.
+template <typename T> struct holder : detail::holder_tag { using type = T; };
 
 /// Keep patient alive while nurse lives
 template <int Nurse, int Patient> struct keep_alive { };
