@@ -180,5 +180,7 @@ if (PYBIND11_TEST)
 endif()
 
 if (PYBIND11_INSTALL)
-  install(FILES ${PYBIND11_HEADERS} DESTINATION include/pybind11)
+  include(GNUInstallDirs)
+  install(FILES ${PYBIND11_HEADERS}
+          DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/pybind11)
 endif()
