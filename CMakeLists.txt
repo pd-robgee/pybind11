@@ -179,8 +179,41 @@ if (PYBIND11_TEST)
   add_subdirectory(tests)
 endif()
 
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+
+# Build an interface library target:
+#   Though any project using pybind11 will need to include python headers and
+#   define c++11/14-ness, these are not included as interface includes or compile
+#   defs because (1) that's really the domain of the upstream project to decide,
+#   (2) we can get away with it since installation (headers) don't care about
+#   python version or C++ standard, and (3) this will make the easily target relocatable.
+add_library(pb11 INTERFACE)
+set_target_properties(pb11 PROPERTIES EXPORT_NAME "pybind11")
+target_include_directories(pb11 INTERFACE $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+if(APPLE)
+    target_link_libraries(pb11 INTERFACE "-undefined dynamic_lookup")
+endif()
+
 if (PYBIND11_INSTALL)
-  include(GNUInstallDirs)
   install(FILES ${PYBIND11_HEADERS}
           DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/pybind11)
+  install(TARGETS pb11
+          EXPORT "${PROJECT_NAME}Targets")
+
+      # explicit "share" not "DATADIR" for CMake search path
+  set(CMAKECONFIG_INSTALL_DIR "share/cmake/${PROJECT_NAME}")
+  configure_package_config_file(tools/${PROJECT_NAME}Config.cmake.in
+                                "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
+                                INSTALL_DESTINATION ${CMAKECONFIG_INSTALL_DIR})
+  write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake
+                                   VERSION 1.8
+                                   #VERSION ${${PROJECT_NAME}_VERSION}
+                                   COMPATIBILITY AnyNewerVersion)
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake
+                ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake
+          DESTINATION ${CMAKECONFIG_INSTALL_DIR})
+  install(EXPORT "${PROJECT_NAME}Targets"
+          NAMESPACE "${PROJECT_NAME}::"
+          DESTINATION ${CMAKECONFIG_INSTALL_DIR})
 endif()
