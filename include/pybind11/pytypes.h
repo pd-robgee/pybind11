@@ -257,8 +257,8 @@ public:
 
     template <typename T = Policy>
     PYBIND11_DEPRECATED("Use of obj.attr(...) as bool is deprecated in favor of pybind11::hasattr(obj, ...)")
-    explicit operator enable_if_t<std::is_same<T, accessor_policies::str_attr>::value ||
-            std::is_same<T, accessor_policies::obj_attr>::value, bool>() const {
+    explicit operator enable_if_t<disjunction<std::is_same<T, accessor_policies::str_attr>,
+            std::is_same<T, accessor_policies::obj_attr>>::value, bool>() const {
         return hasattr(obj, key);
     }
     template <typename T = Policy>
@@ -410,12 +410,10 @@ public:
 template <typename T> using is_keyword = std::is_base_of<arg, T>;
 template <typename T> using is_s_unpacking = std::is_same<args_proxy, T>; // * unpacking
 template <typename T> using is_ds_unpacking = std::is_same<kwargs_proxy, T>; // ** unpacking
-template <typename T> using is_positional = bool_constant<
-    !is_keyword<T>::value && !is_s_unpacking<T>::value && !is_ds_unpacking<T>::value
->;
-template <typename T> using is_keyword_or_ds = bool_constant<
-    is_keyword<T>::value || is_ds_unpacking<T>::value
->;
+template <typename T> using is_positional = negation<disjunction<
+    is_keyword<T>, is_s_unpacking<T>, is_ds_unpacking<T>
+>>;
+template <typename T> using is_keyword_or_ds = disjunction<is_keyword<T>, is_ds_unpacking<T>>;
 
 // Call argument collector forward declarations
 template <return_value_policy policy = return_value_policy::automatic_reference>
@@ -754,7 +752,7 @@ public:
         if (!m_ptr) pybind11_fail("Could not allocate dict object!");
     }
     template <typename... Args,
-              typename = detail::enable_if_t<detail::all_of_t<detail::is_keyword_or_ds, Args...>::value>,
+              typename = detail::enable_if_t<detail::conjunction<detail::is_keyword_or_ds<Args>...>::value>,
               // MSVC workaround: it can't compile an out-of-line definition, so defer the collector
               typename collector = detail::deferred_t<detail::unpacking_collector<>, Args...>>
     explicit dict(Args &&...args) : dict(collector(std::forward<Args>(args)...).kwargs()) { }

@@ -345,15 +345,37 @@ struct internals {
 /// Return a reference to the current 'internals' information
 inline internals &get_internals();
 
-/// Index sequence for convenient template metaprogramming involving tuples
+/// from __cpp_future__ import (convenient aliases from C++14/17)
 #ifdef PYBIND11_CPP14
+using std::enable_if_t;
+using std::conditional_t;
 using std::index_sequence;
 using std::make_index_sequence;
 #else
+template <bool B, typename T = void> using enable_if_t = typename std::enable_if<B, T>::type;
+template <bool B, typename T, typename F> using conditional_t = typename std::conditional<B, T, F>::type;
 template<size_t ...> struct index_sequence  { };
 template<size_t N, size_t ...S> struct make_index_sequence_impl : make_index_sequence_impl <N - 1, N - 1, S...> { };
 template<size_t ...S> struct make_index_sequence_impl <0, S...> { typedef index_sequence<S...> type; };
 template<size_t N> using make_index_sequence = typename make_index_sequence_impl<N>::type;
+#endif
+
+#if defined(PYBIND11_CPP17) || defined(_MSC_VER)
+using std::bool_constant;
+using std::conjunction;
+using std::disjunction;
+using std::negation;
+#else
+template <bool B> using bool_constant = std::integral_constant<bool, B>;
+template <typename...> struct conjunction : std::true_type {};
+template <typename B> struct conjunction<B> : B {};
+template <typename B, typename... Bmore> struct conjunction<B, Bmore...>
+    : conditional_t<B::value, conjunction<Bmore...>, B> {};
+template <typename...> struct disjunction : std::false_type {};
+template <typename B> struct disjunction<B> : B {};
+template <typename B, typename... Bmore> struct disjunction<B, Bmore...>
+    : conditional_t<B::value, B, disjunction<Bmore...>> {};
+template <class T> using negation = bool_constant<!T::value>;
 #endif
 
 /// Strip the class from a method type
@@ -377,34 +399,10 @@ struct void_type { };
 /// Helper template which holds a list of types
 template <typename...> struct type_list { };
 
-/// from __cpp_future__ import (convenient aliases from C++14/17)
-template <bool B> using bool_constant = std::integral_constant<bool, B>;
-template <class T> using negation = bool_constant<!T::value>;
-template <bool B, typename T = void> using enable_if_t = typename std::enable_if<B, T>::type;
-template <bool B, typename T, typename F> using conditional_t = typename std::conditional<B, T, F>::type;
-
 /// Compile-time integer sum
 constexpr size_t constexpr_sum() { return 0; }
 template <typename T, typename... Ts>
 constexpr size_t constexpr_sum(T n, Ts... ns) { return size_t{n} + constexpr_sum(ns...); }
-
-// Counts the number of types in the template parameter pack matching the predicate
-#if !defined(_MSC_VER)
-template <template<typename> class Predicate, typename... Ts>
-using count_t = std::integral_constant<size_t, constexpr_sum(Predicate<Ts>::value...)>;
-#else
-// MSVC workaround (2015 Update 3 has issues with some member type aliases and constexpr)
-template <template<typename> class Predicate, typename... Ts> struct count_t;
-template <template<typename> class Predicate> struct count_t<Predicate> : std::integral_constant<size_t, 0> {};
-template <template<typename> class Predicate, class T, class... Ts>
-struct count_t<Predicate, T, Ts...> : std::integral_constant<size_t, Predicate<T>::value + count_t<Predicate, Ts...>::value> {};
-#endif
-
-/// Return true if all/any Ts satify Predicate<T>
-template <template<typename> class Predicate, typename... Ts>
-using all_of_t = bool_constant<(count_t<Predicate, Ts...>::value == sizeof...(Ts))>;
-template <template<typename> class Predicate, typename... Ts>
-using any_of_t = bool_constant<(count_t<Predicate, Ts...>::value > 0)>;
 
 // Extracts the first type from the template parameter pack matching the predicate, or Default if none match.
 template <template<class> class Predicate, class Default, class... Ts> struct first_of;
