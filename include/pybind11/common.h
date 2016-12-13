@@ -383,8 +383,8 @@ template <class... Ts> using any_of = negation<all_of<negation<Ts>...>>;
 #else
 // MSVC has trouble with the above, but supports std::conjunction, which we can use instead (albeit
 // at a slight loss of compilation efficiency).
-template <class... Ts> struct all_of : bool_constant<std::conjunction<Ts...>::value> {};
-template <class... Ts> struct any_of : bool_constant<std::disjunction<Ts...>::value> {};
+template <class... Ts> using all_of = std::conjunction<Ts...>;
+template <class... Ts> using any_of = std::disjunction<Ts...>;
 #endif
 template <class... Ts> using none_of = negation<any_of<Ts...>>;
 
