@@ -349,11 +349,16 @@ inline internals &get_internals();
 #ifdef PYBIND11_CPP14
 using std::enable_if_t;
 using std::conditional_t;
-using std::index_sequence;
-using std::make_index_sequence;
 #else
 template <bool B, typename T = void> using enable_if_t = typename std::enable_if<B, T>::type;
 template <bool B, typename T, typename F> using conditional_t = typename std::conditional<B, T, F>::type;
+#endif
+
+/// Index sequences
+#if defined(PYBIND11_CPP14) || defined(_MSC_VER)
+using std::index_sequence;
+using std::make_index_sequence;
+#else
 template<size_t ...> struct index_sequence  { };
 template<size_t N, size_t ...S> struct make_index_sequence_impl : make_index_sequence_impl <N - 1, N - 1, S...> { };
 template<size_t ...S> struct make_index_sequence_impl <0, S...> { typedef index_sequence<S...> type; };
@@ -362,21 +367,29 @@ template<size_t N> using make_index_sequence = typename make_index_sequence_impl
 
 #if defined(PYBIND11_CPP17) || defined(_MSC_VER)
 using std::bool_constant;
-using std::conjunction;
-using std::disjunction;
 using std::negation;
 #else
 template <bool B> using bool_constant = std::integral_constant<bool, B>;
-template <typename...> struct conjunction : std::true_type {};
-template <typename B> struct conjunction<B> : B {};
-template <typename B, typename... Bmore> struct conjunction<B, Bmore...>
-    : conditional_t<B::value, conjunction<Bmore...>, B> {};
-template <typename...> struct disjunction : std::false_type {};
-template <typename B> struct disjunction<B> : B {};
-template <typename B, typename... Bmore> struct disjunction<B, Bmore...>
-    : conditional_t<B::value, B, disjunction<Bmore...>> {};
 template <class T> using negation = bool_constant<!T::value>;
 #endif
+
+/// Compile-time all/any/none of that check the ::value of all template types
+#ifdef PYBIND11_CPP17
+template <class... Ts> using all_of = bool_constant<Ts::value && ...>;
+template <class... Ts> using any_of = bool_constant<Ts::value || ...>;
+#elif !defined(_MSC_VER)
+template <bool...> struct bools {};
+template <class... Ts> using all_of = std::is_same<
+    bools<Ts::value..., true>,
+    bools<true, Ts::value...>>;
+template <class... Ts> using any_of = negation<all_of<negation<Ts>...>>;
+#else
+// MSVC has trouble with the above, but supports std::conjunction, which we can use instead (albeit
+// at a slight loss of compilation efficiency).
+template <class... Ts> using all_of = std::conjunction<Ts...>;
+template <class... Ts> using any_of = std::disjunction<Ts...>;
+#endif
+template <class... Ts> using none_of = negation<any_of<Ts...>>;
 
 /// Strip the class from a method type
 template <typename T> struct remove_class { };

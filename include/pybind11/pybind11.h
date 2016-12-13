@@ -132,8 +132,8 @@ protected:
                                         ? &rec->data : rec->data[0]);
 
             /* Override policy for rvalues -- always move */
-            constexpr auto is_rvalue = !std::is_pointer<Return>::value
-                                       && !std::is_lvalue_reference<Return>::value;
+            constexpr auto is_rvalue = detail::none_of<std::is_pointer<Return>,
+                                                       std::is_lvalue_reference<Return>>::value;
             const auto policy = is_rvalue ? return_value_policy::move : rec->policy;
 
             /* Perform the function call */
@@ -922,9 +922,10 @@ NAMESPACE_END(detail)
 template <typename type_, typename... options>
 class class_ : public detail::generic_type {
     template <typename T> using is_holder = detail::is_holder_type<type_, T>;
-    template <typename T> using is_subtype = detail::bool_constant<std::is_base_of<type_, T>::value && !std::is_same<T, type_>::value>;
-    template <typename T> using is_base = detail::bool_constant<std::is_base_of<T, type_>::value && !std::is_same<T, type_>::value>;
-    template <typename T> struct is_valid_class_option : detail::disjunction<is_holder<T>, is_subtype<T>, is_base<T>> {};
+    template <typename T> using is_subtype = detail::all_of<std::is_base_of<type_, T>, detail::negation<std::is_same<T, type_>>>;
+    template <typename T> using is_base = detail::all_of<std::is_base_of<T, type_>, detail::negation<std::is_same<T, type_>>>;
+    // struct instead of using here to help MSVC:
+    template <typename T> struct is_valid_class_option : detail::any_of<is_holder<T>, is_subtype<T>, is_base<T>> {};
 
 public:
     using type = type_;
@@ -933,7 +934,7 @@ public:
     using holder_type = detail::first_of_t<is_holder, std::unique_ptr<type>, options...>;
     using instance_type = detail::instance<type, holder_type>;
 
-    static_assert(detail::conjunction<is_valid_class_option<options>...>::value,
+    static_assert(detail::all_of<is_valid_class_option<options>...>::value,
             "Unknown/invalid class_ template parameters provided");
 
     PYBIND11_OBJECT(class_, generic_type, PyType_Check)
