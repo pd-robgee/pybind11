@@ -374,10 +374,7 @@ template <class T> using negation = bool_constant<!T::value>;
 #endif
 
 /// Compile-time all/any/none of that check the ::value of all template types
-#ifdef PYBIND11_CPP17
-template <class... Ts> using all_of = bool_constant<Ts::value && ...>;
-template <class... Ts> using any_of = bool_constant<Ts::value || ...>;
-#elif !defined(_MSC_VER)
+#if !defined(_MSC_VER)
 template <bool...> struct bools {};
 template <class... Ts> using all_of = std::is_same<
     bools<Ts::value..., true>,
@@ -386,8 +383,8 @@ template <class... Ts> using any_of = negation<all_of<negation<Ts>...>>;
 #else
 // MSVC has trouble with the above, but supports std::conjunction, which we can use instead (albeit
 // at a slight loss of compilation efficiency).
-template <class... Ts> using all_of = std::conjunction<Ts...>;
-template <class... Ts> using any_of = std::disjunction<Ts...>;
+template <class... Ts> using all_of = bool_constant<std::conjunction<Ts...>::value>;
+template <class... Ts> using any_of = bool_constant<std::disjunction<Ts...>::value>;
 #endif
 template <class... Ts> using none_of = negation<any_of<Ts...>>;
 
