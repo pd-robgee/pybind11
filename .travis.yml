@@ -2,18 +2,18 @@ language: cpp
 sudo: false
 matrix:
   include:
-  - os: linux
-    env: PYTHON=2.7 CPP=11 GCC=4.8
-    addons:
-      apt:
-        sources: [ubuntu-toolchain-r-test, kubuntu-backports]
-        packages: [g++-4.8, cmake]
-  - os: linux
-    env: PYTHON=3.5 CPP=11 GCC=4.8
-    addons:
-      apt:
-        sources: [ubuntu-toolchain-r-test, kubuntu-backports, deadsnakes]
-        packages: [g++-4.8, cmake, python3.5-dev]
+#  - os: linux
+#    env: PYTHON=2.7 CPP=11 GCC=4.8
+#    addons:
+#      apt:
+#        sources: [ubuntu-toolchain-r-test, kubuntu-backports]
+#        packages: [g++-4.8, cmake]
+#  - os: linux
+#    env: PYTHON=3.5 CPP=11 GCC=4.8
+#    addons:
+#      apt:
+#        sources: [ubuntu-toolchain-r-test, kubuntu-backports, deadsnakes]
+#        packages: [g++-4.8, cmake, python3.5-dev]
   - sudo: true
     services: docker
     env: PYTHON=2.7 CPP=14 GCC=6
@@ -22,35 +22,35 @@ matrix:
     env: PYTHON=3.5 CPP=14 GCC=6 DEBUG=1
   - sudo: true
     services: docker
-    env: PYTHON=3.5 CPP=17 GCC=7
-  - os: osx
-    osx_image: xcode7.3
-    env: PYTHON=2.7 CPP=14 CLANG
-  - os: osx
-    osx_image: xcode7.3
-    env: PYTHON=3.5 CPP=14 CLANG
+    env: PYTHON=3.6 CPP=17 GCC=7
+#  - os: osx
+#    osx_image: xcode7.3
+#    env: PYTHON=2.7 CPP=14 CLANG
+#  - os: osx
+#    osx_image: xcode7.3
+#    env: PYTHON=3.5 CPP=14 CLANG
   # A barebones build makes sure everything still works without optional deps (numpy/scipy/eigen)
   # and also tests the automatic discovery functions in CMake (Python version, C++ standard).
-  - os: linux
-    env: BAREBONES
-    addons:
-      apt:
-        sources: [ubuntu-toolchain-r-test, kubuntu-backports]
-        packages: [g++-4.8, cmake]
-    install: pip install pytest
+#  - os: linux
+#    env: BAREBONES
+#    addons:
+#      apt:
+#        sources: [ubuntu-toolchain-r-test, kubuntu-backports]
+#        packages: [g++-4.8, cmake]
+#    install: pip install pytest
   # Documentation build:
-  - os: linux
-    language: docs
-    env: DOCS STYLE LINT
-    install:
-    - pip install --upgrade sphinx sphinx_rtd_theme flake8 pep8-naming
-    - pip install docutils==0.12
-    script:
-    - make -C docs html SPHINX_OPTIONS=-W
-    - tools/check-style.sh
-    - flake8
+#  - os: linux
+#    language: docs
+#    env: DOCS STYLE LINT
+#    install:
+#    - pip install --upgrade sphinx sphinx_rtd_theme flake8 pep8-naming
+#    - pip install docutils==0.12
+#    script:
+#    - make -C docs html SPHINX_OPTIONS=-W
+#    - tools/check-style.sh
+#    - flake8
   allow_failures:
-    - env: PYTHON=3.5 CPP=17 GCC=7
+    - env: PYTHON=3.6 CPP=17 GCC=7
 cache:
   directories:
   - $HOME/.cache/pip
@@ -62,7 +62,7 @@ before_install:
     if [ -z "$GCC" ]; then export GCC=4.8; fi
     export CXX=g++-$GCC CC=gcc-$GCC;
     if [ "$GCC" = "6" ]; then export DOCKER=debian:testing
-    elif [ "$GCC" = "7" ]; then export DOCKER=debian:experimental APT_GET_EXTRA="-t experimental"
+    elif [ "$GCC" = "7" ]; then export EXPERIMENTAL=1 DOCKER=debian:experimental APT_GET_EXTRA="-t experimental"
     fi
   elif [ "$TRAVIS_OS_NAME" = "osx" ]; then
     export CXX=clang++ CC=clang;
@@ -79,8 +79,22 @@ before_install:
       --env="CC=$CC" --env="CXX=$CXX" --env="DEBIAN_FRONTEND=$DEBIAN_FRONTEND" \
       --env=GCC_COLORS=\  \
       $DOCKER)
-    docker exec --tty "$containerid" sh -c 'for s in 0 15; do sleep $s; apt-get update && apt-get -qy dist-upgrade && break; done'
     export SCRIPT_RUN_PREFIX="docker exec --tty $containerid"
+    $SCRIPT_RUN_PREFIX sh -c 'for s in 0 15; do sleep $s; apt-get update && apt-get -qy dist-upgrade && break; done'
+
+    apt_pkgs="cmake make g++"
+    if [ -n "$EXPERIMENTAL" ]; then
+      apt_pkgs="$apt_pkgs python$PYTHON-dev curl ca-certificates gfortran libblas-dev liblapack-dev"
+    else
+      apt_pkgs="$apt_pkgs python$PY-dev"
+    fi
+
+    $SCRIPT_RUN_PREFIX sh -c "for s in 0 15; do sleep $s; \
+      apt-get -qy --no-install-recommends $APT_GET_EXTRA install $apt_pkgs && break; done"
+
+    if [ -n "$EXPERIMENTAL" ]; then
+      $SCRIPT_RUN_PREFIX sh -c "curl -fsSL -O https://bootstrap.pypa.io/get-pip.py && python$PYTHON get-pip.py"
+    fi
   else
     if [ "$TRAVIS_OS_NAME" = "linux" ]; then
       pip install --user --upgrade pip virtualenv
@@ -101,10 +115,12 @@ install:
 - |
   # Install dependencies
   if [ -n "$DOCKER" ]; then
-    docker exec --tty "$containerid" sh -c "for s in 0 15; do sleep \$s; \
-      apt-get -qy --no-install-recommends $APT_GET_EXTRA install \
-        python$PY-dev python$PY-pytest python$PY-scipy \
-        libeigen3-dev cmake make g++-$GCC && break; done"
+    if [ -n "$EXPERIMENTAL" ]; then
+      $SCRIPT_RUN_PREFIX sh -c "pip$PYTHON install numpy scipy pytest"
+    else
+      $SCRIPT_RUN_PREFIX sh -c "for s in 0 15; do sleep \$s; apt-get -qy --no-install-recommends install \
+        python$PY-pytest python$PY-scipy libeigen3-dev && break; done"
+    fi
   else
     pip install numpy scipy pytest
 
