@@ -69,7 +69,7 @@ before_install:
     if [ -z "$GCC" ]; then export GCC=4.8; fi
     export CXX=g++-$GCC CC=gcc-$GCC;
     if [ "$GCC" = "6" ]; then export DOCKER=debian:testing
-    elif [ "$GCC" = "7" ]; then export DOCKER=debian:experimental APT_GET_EXTRA="-t experimental"
+    elif [ "$GCC" = "7" ]; then export DOCKER=debian:experimental APT_GET_EXTRA="-t experimental" CXXFLAGS="-Wno-int-in-bool-context"
     fi
   elif [ "$TRAVIS_OS_NAME" = "osx" ]; then
     export CXX=clang++ CC=clang;
