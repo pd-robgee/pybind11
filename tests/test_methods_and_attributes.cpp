@@ -97,6 +97,47 @@ public:
 
 class CppDerivedDynamicClass : public DynamicClass { };
 
+// py::arg/py::arg_v testing: these arguments just record their argument when invoked
+class ArgInspector1 { public: std::string arg = "(default arg inspector 1)"; };
+class ArgInspector2 { public: std::string arg = "(default arg inspector 2)"; };
+namespace pybind11 { namespace detail {
+template <> struct type_caster<ArgInspector1> {
+public:
+    PYBIND11_TYPE_CASTER(ArgInspector1, _("ArgInspector1"));
+
+    bool load(handle src, bool, py::arg_v a) {
+        std::string argname = std::to_string(a.argno);
+        if (a.name) argname += " (='" + std::string(a.name) + "')";
+        value.arg = "loading argument " + argname + " " +
+            std::string(a.flag_nocopy ? "WITH" : "WITHOUT") + " nocopy flag.  "
+            "Argument value = " + (std::string) str(src) +
+            "; argument default = " + (std::string) str(a.value);
+        return true;
+    }
+
+    static handle cast(const ArgInspector1 &src, return_value_policy, handle) {
+        return str(src.arg).release();
+    }
+};
+template <> struct type_caster<ArgInspector2> {
+public:
+    PYBIND11_TYPE_CASTER(ArgInspector2, _("ArgInspector2"));
+
+    bool load(handle src, bool, py::arg a) {
+        std::string argname = std::to_string(a.argno);
+        if (a.name) argname += " (='" + std::string(a.name) + "')";
+        value.arg = "loading argument " + argname + " " +
+            std::string(a.flag_nocopy ? "WITH" : "WITHOUT") + " nocopy flag.  "
+            "Argument value = " + (std::string) str(src);
+        return true;
+    }
+
+    static handle cast(const ArgInspector2 &src, return_value_policy, handle) {
+        return str(src.arg).release();
+    }
+};
+}}
+
 test_initializer methods_and_attributes([](py::module &m) {
     py::class_<ExampleMandA>(m, "ExampleMandA")
         .def(py::init<>())
@@ -183,4 +224,21 @@ test_initializer methods_and_attributes([](py::module &m) {
     py::class_<CppDerivedDynamicClass, DynamicClass>(m, "CppDerivedDynamicClass")
         .def(py::init());
 #endif
+
+    class ArgInspector {
+    public:
+        ArgInspector1 f(ArgInspector1 a) { return a; }
+        std::string g(ArgInspector1 a, const ArgInspector1 &b, int c, ArgInspector2 *d) {
+            return a.arg + "\n" + b.arg + "\n" + std::to_string(c) + "\n" + d->arg;
+        }
+        static ArgInspector2 h(ArgInspector2 a) { return a; }
+    };
+    py::class_<ArgInspector>(m, "ArgInspector")
+        .def(py::init<>())
+        .def("f", &ArgInspector::f)
+        .def("g", &ArgInspector::g, "a"_a.nocopy(), "b"_a, "c"_a.nocopy()=13, "d"_a=ArgInspector2())
+        .def_static("h", &ArgInspector::h, py::arg().nocopy())
+        ;
+    m.def("arg_inspect_func", [](ArgInspector2 a, ArgInspector1 b) { return a.arg + "\n" + b.arg; },
+            py::arg().nocopy(false), py::arg_v(nullptr, ArgInspector1()).nocopy(true));
 });

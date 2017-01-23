@@ -122,7 +122,7 @@ protected:
             cast_in args_converter;
 
             /* Try to cast the function arguments into the C++ domain */
-            if (!args_converter.load_args(args))
+            if (!args_converter.load_args(args, *rec))
                 return PYBIND11_TRY_NEXT_OVERLOAD;
 
             /* Invoke call policy pre-call hook */
@@ -198,7 +198,7 @@ protected:
             if (c == '{') {
                 // Write arg name for everything except *args, **kwargs and return type.
                 if (type_depth == 0 && text[char_index] != '*' && arg_index < args) {
-                    if (!rec->args.empty()) {
+                    if (!rec->args.empty() && rec->args[arg_index].name) {
                         signature += rec->args[arg_index].name;
                     } else if (arg_index == 0 && rec->is_method) {
                         signature += "self";
@@ -433,7 +433,7 @@ protected:
                     // raise a TypeError like Python does.  (We could also continue with the next
                     // overload, but this seems highly likely to be a caller mistake rather than a
                     // legitimate overload).
-                    if (kwargs_in && args_copied < it->args.size()) {
+                    if (kwargs_in && args_copied < it->args.size() && it->args[args_copied].name) {
                         handle value = PyDict_GetItemString(kwargs_in, it->args[args_copied].name);
                         if (value)
                             throw type_error(std::string(it->name) + "(): got multiple values for argument '" +
@@ -454,7 +454,7 @@ protected:
                         const auto &arg = it->args[args_copied];
 
                         handle value;
-                        if (kwargs_in)
+                        if (kwargs_in && arg.name)
                             value = PyDict_GetItemString(kwargs.ptr(), arg.name);
 
                         if (value) {

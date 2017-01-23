@@ -1175,19 +1175,29 @@ template <return_value_policy policy = return_value_policy::automatic_reference,
     return result;
 }
 
-/// Annotation for keyword arguments
+/// Annotation for arguments
 struct arg {
-    constexpr explicit arg(const char *name) : name(name) { }
+    constexpr explicit arg(const char *name = nullptr) : name(name), flag_nocopy(false) { }
     template <typename T> arg_v operator=(T &&value) const;
+    arg &nocopy(bool flag = true) { flag_nocopy = flag; return *this; }
 
-    const char *name;
+    const char *name; ///< If non-null, this is a named kwargs argument
+    bool flag_nocopy : 1; ///< If set, do not allow copying (requires a supporting type caster!)
+    /// When an arg/arg_v is passed to a type caster, this is the argument position.  For methods,
+    /// arguments start at 1; for functions at 0.  Has no effect for annotations during binding.
+    uint16_t argno = 0;
 };
 
-/// Annotation for keyword arguments with values
+// Forward declaration
+NAMESPACE_BEGIN(detail)
+struct argument_record;
+NAMESPACE_END(detail)
+
+/// Annotation for arguments with values
 struct arg_v : arg {
     template <typename T>
-    arg_v(const char *name, T &&x, const char *descr = nullptr)
-        : arg(name),
+    arg_v(arg &&base, T &&x, const char *descr = nullptr)
+        : arg(base),
           value(reinterpret_steal<object>(
               detail::make_caster<T>::cast(x, return_value_policy::automatic, {})
           )),
@@ -1197,6 +1207,18 @@ struct arg_v : arg {
 #endif
     { }
 
+    // Direct construction:
+    template <typename T>
+    arg_v(const char *name, T &&x, const char *descr = nullptr)
+        : arg_v(arg(name), std::forward<T>(x), descr) { }
+
+    // Promotion from arg:
+    template <typename T>
+    arg_v(const arg &base, T &&x, const char *descr = nullptr)
+        : arg_v(arg(base), std::forward<T>(x), descr) { }
+
+    arg_v &nocopy(bool flag = true) { arg::nocopy(flag); return *this; }
+
     object value;
     const char *descr;
 #if !defined(NDEBUG)
@@ -1205,7 +1227,7 @@ struct arg_v : arg {
 };
 
 template <typename T>
-arg_v arg::operator=(T &&value) const { return {name, std::forward<T>(value)}; }
+arg_v arg::operator=(T &&value) const { return {std::move(*this), std::forward<T>(value)}; }
 
 /// Alias for backward compatibility -- to be removed in version 2.0
 template <typename /*unused*/> using arg_t = arg_v;
@@ -1221,6 +1243,9 @@ NAMESPACE_BEGIN(detail)
 struct function_record;
 
 using function_arguments = const std::vector<handle> &;
+
+// Implementation in attr.h
+arg_v argument_loader_get_arg_v(const function_record &rec, size_t i);
 
 /// Helper class which loads arguments for C++ functions called from Python
 template <typename... Args>
@@ -1243,8 +1268,8 @@ public:
 
     static PYBIND11_DESCR arg_names() { return detail::concat(make_caster<Args>::name()...); }
 
-    bool load_args(function_arguments args) {
-        return load_impl_sequence(args, indices{});
+    bool load_args(function_arguments args, const function_record &rec) {
+        return load_impl_sequence(args, rec, indices{});
     }
 
     template <typename Return, typename Func>
@@ -1260,14 +1285,28 @@ public:
 
 private:
 
-    static bool load_impl_sequence(function_arguments, index_sequence<>) { return true; }
+    static bool load_impl_sequence(function_arguments, const function_record &, index_sequence<>) { return true; }
 
     template <size_t... Is>
-    bool load_impl_sequence(function_arguments args, index_sequence<Is...>) {
-        for (bool r : {std::get<Is>(value).load(args[Is], true)...})
+    bool load_impl_sequence(function_arguments args, const function_record &rec, index_sequence<Is...>) {
+        for (bool r : {load_one_arg<Is>(std::get<Is>(value), args[Is], rec)...})
             if (!r)
                 return false;
         return true;
+    }
+
+    // Loads an argument for an ordinary type caster with a load(handle, bool):
+    template <size_t I, typename Caster, enable_if_t<std::is_same<bool, decltype(
+            Caster().load(handle(), true))>::value, int> = 0>
+    bool load_one_arg(Caster &caster, const handle &h, const function_record &) {
+        return caster.load(h, true);
+    }
+
+    // A type caster can also get argument info by providing a load(handle, bool, arg_v) method.
+    template <size_t I, typename Caster, enable_if_t<std::is_same<bool, decltype(
+            Caster().load(handle(), true, std::declval<arg_v>()))>::value, int> = 0>
+    bool load_one_arg(Caster &caster, const handle &h, const function_record &rec) {
+        return caster.load(h, true, argument_loader_get_arg_v(rec, I));
     }
 
     template <typename Return, typename Func, size_t... Is>
@@ -1353,6 +1392,13 @@ private:
     }
 
     void process(list &/*args_list*/, arg_v a) {
+        if (!a.name)
+#if defined(NDEBUG)
+            nameless_argument_error();
+#else
+            nameless_argument_error(a.type);
+#endif
+
         if (m_kwargs.contains(a.name)) {
 #if defined(NDEBUG)
             multiple_values_error();
@@ -1385,6 +1431,15 @@ private:
         }
     }
 
+    [[noreturn]] static void nameless_argument_error() {
+        throw type_error("Got kwargs without a name; only named arguments "
+                         "may be passed via py::arg() to a python function call. "
+                         "(compile in debug mode for details)");
+    }
+    [[noreturn]] static void nameless_argument_error(std::string type) {
+        throw type_error("Got kwargs without a name of type '" + type + "'; only named "
+                         "arguments may be passed via py::arg() to a python function call. ");
+    }
     [[noreturn]] static void multiple_values_error() {
         throw type_error("Got multiple values for keyword argument "
                          "(compile in debug mode for details)");

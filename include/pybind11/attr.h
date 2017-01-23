@@ -71,9 +71,10 @@ struct argument_record {
     const char *name;  ///< Argument name
     const char *descr; ///< Human-readable version of the argument value
     handle value;      ///< Associated Python object
+    bool nocopy : 1;   ///< True if the argument should fail to load rather than invoke an (expensive) copy
 
-    argument_record(const char *name, const char *descr, handle value)
-        : name(name), descr(descr), value(value) { }
+    argument_record(const char *name, const char *descr, handle value, bool nocopy)
+        : name(name), descr(descr), value(value), nocopy(nocopy) { }
 };
 
 /// Internal data structure which holds metadata about a bound function (signature, overloads, etc.)
@@ -139,6 +140,22 @@ struct function_record {
     /// Pointer to next overload
     function_record *next = nullptr;
 };
+
+inline arg_v argument_loader_get_arg_v(const function_record &rec, size_t i) {
+    arg_v a(nullptr /* no name */, handle() /* no default */);
+    a.argno = (uint16_t) i;
+
+    if (i < rec.args.size()) {
+        const auto &arg_rec = rec.args[i];
+        a.name = arg_rec.name;
+        a.value = reinterpret_borrow<object>(arg_rec.value);
+        a.descr = arg_rec.descr;
+        a.nocopy(arg_rec.nocopy);
+    }
+
+    return a;
+}
+
 
 /// Special data structure which (temporarily) holds metadata about a bound class
 struct type_record {
@@ -266,8 +283,8 @@ template <> struct process_attribute<is_operator> : process_attribute_default<is
 template <> struct process_attribute<arg> : process_attribute_default<arg> {
     static void init(const arg &a, function_record *r) {
         if (r->is_method && r->args.empty())
-            r->args.emplace_back("self", nullptr, handle());
-        r->args.emplace_back(a.name, nullptr, handle());
+            r->args.emplace_back("self", nullptr, handle(), false /*nocopy*/);
+        r->args.emplace_back(a.name, nullptr, handle(), a.flag_nocopy);
     }
 };
 
@@ -275,7 +292,7 @@ template <> struct process_attribute<arg> : process_attribute_default<arg> {
 template <> struct process_attribute<arg_v> : process_attribute_default<arg_v> {
     static void init(const arg_v &a, function_record *r) {
         if (r->is_method && r->args.empty())
-            r->args.emplace_back("self", nullptr, handle());
+            r->args.emplace_back("self", nullptr, handle(), false /*nocopy*/);
 
         if (!a.value) {
 #if !defined(NDEBUG)
@@ -296,7 +313,7 @@ template <> struct process_attribute<arg_v> : process_attribute_default<arg_v> {
                           "Compile in debug mode for more information.");
 #endif
         }
-        r->args.emplace_back(a.name, a.descr, a.value.inc_ref());
+        r->args.emplace_back(a.name, a.descr, a.value.inc_ref(), a.flag_nocopy);
     }
 };
 

@@ -203,3 +203,35 @@ def test_cyclic_gc():
     assert cstats.alive() == 2
     del i1, i2
     assert cstats.alive() == 0
+
+
+def test_type_caster_arg_info(msg):
+    from pybind11_tests import ArgInspector, arg_inspect_func
+
+    a = ArgInspector()
+    assert msg(a.f("hi")) == """
+        loading argument 1 WITHOUT nocopy flag.  Argument value = hi; argument default = <NULL>
+    """
+    assert msg(a.g("this is a", "this is b")) == """
+        loading argument 1 (='a') WITH nocopy flag.  Argument value = this is a; argument default = <NULL>
+        loading argument 2 (='b') WITHOUT nocopy flag.  Argument value = this is b; argument default = <NULL>
+        13
+        loading argument 4 (='d') WITHOUT nocopy flag.  Argument value = (default arg inspector 2)
+    """ # noqa: E501 line too long
+    assert msg(a.g("this is a", "this is b", 42)) == """
+        loading argument 1 (='a') WITH nocopy flag.  Argument value = this is a; argument default = <NULL>
+        loading argument 2 (='b') WITHOUT nocopy flag.  Argument value = this is b; argument default = <NULL>
+        42
+        loading argument 4 (='d') WITHOUT nocopy flag.  Argument value = (default arg inspector 2)
+    """ # noqa: E501 line too long
+    assert msg(a.g("this is a", "this is b", 42, "this is d")) == """
+        loading argument 1 (='a') WITH nocopy flag.  Argument value = this is a; argument default = <NULL>
+        loading argument 2 (='b') WITHOUT nocopy flag.  Argument value = this is b; argument default = <NULL>
+        42
+        loading argument 4 (='d') WITHOUT nocopy flag.  Argument value = this is d
+    """ # noqa: E501 line too long
+    assert a.h("arg 1") == "loading argument 0 WITH nocopy flag.  Argument value = arg 1"
+    assert msg(arg_inspect_func("A1", "A2")) == """
+        loading argument 0 WITHOUT nocopy flag.  Argument value = A1
+        loading argument 1 WITH nocopy flag.  Argument value = A2; argument default = (default arg inspector 1)
+    """ # noqa: E501 line too long
