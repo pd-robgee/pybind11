@@ -433,10 +433,8 @@ test_initializer python_types([](py::module &m) {
     });
 
     // Some test characters in utf16 and utf32 encodings.  The last one (the 𝐀) contains a null byte
-    // (Note also that all of these need to be in Unicode 5.2, since that the last version Python
-    // 5.2.0 supports; sadly this means 💩 and 🎂 can't be used in Python 2.7.
-    char32_t a32 = 0x61 /*a*/, z32 = 0x7a /*z*/, ib32 = 0x203d /*‽*/, clef32 = 0x1d11e /*𝄞*/,               mathbfA32 = 0x1d400 /*𝐀*/;
-    char16_t b16 = 0x62 /*b*/, z16 = 0x7a,       ib16 = 0x203d,       clef16_1 = 0xd834, clef16_2 = 0xdd1e, mathbfA16_1 = 0xd835, mathbfA16_2 = 0xdc00;
+    char32_t a32 = 0x61 /*a*/, z32 = 0x7a /*z*/, ib32 = 0x203d /*‽*/, cake32 = 0x1f382 /*🎂*/,              mathbfA32 = 0x1d400 /*𝐀*/;
+    char16_t b16 = 0x62 /*b*/, z16 = 0x7a,       ib16 = 0x203d,       cake16_1 = 0xd83c, cake16_2 = 0xdf82, mathbfA16_1 = 0xd835, mathbfA16_2 = 0xdc00;
     std::wstring wstr;
     wstr.push_back(0x61); // a
     wstr.push_back(0x2e18); // ⸘
@@ -444,13 +442,13 @@ test_initializer python_types([](py::module &m) {
     else { wstr.push_back((wchar_t) mathbfA32); } // 𝐀, utf32
     wstr.push_back(0x7a); // z
 
-    m.def("good_utf8_string", []() { return std::string(u8"Say utf8\u203d \U0001d11e \U0001d400"); }); // Say utf8‽ 𝄞 𝐀
-    m.def("good_utf16_string", [=]() { return std::u16string({ b16, ib16, clef16_1, clef16_2, mathbfA16_1, mathbfA16_2, z16 }); }); // b‽𝄞𝐀z
-    m.def("good_utf32_string", [=]() { return std::u32string({ a32, mathbfA32, clef32, ib32, z32 }); }); // a𝐀𝄞‽z
+    m.def("good_utf8_string", []() { return std::string(u8"Say utf8\u203d \U0001f382 \U0001d400"); }); // Say utf8‽ 🎂 𝐀
+    m.def("good_utf16_string", [=]() { return std::u16string({ b16, ib16, cake16_1, cake16_2, mathbfA16_1, mathbfA16_2, z16 }); }); // b‽🎂𝐀z
+    m.def("good_utf32_string", [=]() { return std::u32string({ a32, mathbfA32, cake32, ib32, z32 }); }); // a𝐀🎂‽z
     m.def("good_wchar_string", [=]() { return wstr; }); // a‽𝐀z
     m.def("bad_utf8_string", []()  { return std::string("abc\xd0" "def"); });
     m.def("bad_utf16_string", [=]() { return std::u16string({ b16, char16_t(0xd800), z16 }); });
-    // Under Python 2.7, and invalid unicode UTF-32 characters don't appear to trigger UnicodeDecodeError
+    // Under Python 2.7, invalid unicode UTF-32 characters don't appear to trigger UnicodeDecodeError
     if (PY_MAJOR_VERSION >= 3)
         m.def("bad_utf32_string", [=]() { return std::u32string({ a32, char32_t(0xd800), z32 }); });
     if (PY_MAJOR_VERSION >= 3 || sizeof(wchar_t) == 2)

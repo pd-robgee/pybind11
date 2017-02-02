@@ -422,9 +422,9 @@ def test_unicode_conversion():
                                 good_wchar_string,  # bad_wchar_string,
                                 u8_Z, u8_eacute, u16_ibang, u32_mathbfA, wchar_heart)
 
-    assert good_utf8_string() == u"Say utf8‽ 𝄞 𝐀"
-    assert good_utf16_string() == u"b‽𝄞𝐀z"
-    assert good_utf32_string() == u"a𝐀𝄞‽z"
+    assert good_utf8_string() == u"Say utf8‽ 🎂 𝐀"
+    assert good_utf16_string() == u"b‽🎂𝐀z"
+    assert good_utf32_string() == u"a𝐀🎂‽z"
     assert good_wchar_string() == u"a⸘𝐀z"
 
     with pytest.raises(UnicodeDecodeError):
