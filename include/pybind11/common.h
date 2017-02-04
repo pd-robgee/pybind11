@@ -117,6 +117,7 @@
 #define PYBIND11_LONG_AS_UNSIGNED_LONGLONG(o) PyLong_AsUnsignedLongLong(o)
 #define PYBIND11_BYTES_NAME "bytes"
 #define PYBIND11_STRING_NAME "str"
+#define PYBIND11_CHR_NAME "chr"
 #define PYBIND11_SLICE_OBJECT PyObject
 #define PYBIND11_FROM_STRING PyUnicode_FromString
 #define PYBIND11_STR_TYPE ::pybind11::str
@@ -136,6 +137,7 @@
 #define PYBIND11_LONG_AS_UNSIGNED_LONGLONG(o) (PyInt_Check(o) ? (unsigned long long) PyLong_AsUnsignedLong(o) : PyLong_AsUnsignedLongLong(o))
 #define PYBIND11_BYTES_NAME "str"
 #define PYBIND11_STRING_NAME "unicode"
+#define PYBIND11_CHR_NAME "unichr"
 #define PYBIND11_SLICE_OBJECT PySliceObject
 #define PYBIND11_FROM_STRING PyString_FromString
 #define PYBIND11_STR_TYPE ::pybind11::bytes
