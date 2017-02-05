@@ -438,10 +438,13 @@ protected:
     static Constructor make_move_constructor(...) { return nullptr; }
 };
 
-// If true, make_caster should make a pointer/array of this type into its own pointer caster
-// (type_caster<T*> rather than type_caster<T>).  This is currently used for C-style strings (`char*`
-// and the like) where a `char*` is quite a different concept from just a pointer to a (single) char.
-template <typename T, typename SFINAE = void> struct use_pointer_caster : std::false_type {};
+template <typename type, typename SFINAE = void> class type_caster : public type_caster_base<type> { };
+template <typename type_, typename SFINAE = void> struct make_caster_type { using type = type_caster<intrinsic_t<type_>>; };
+template <typename type> using make_caster = typename make_caster_type<type>::type;
+
+// make_caster_type can be specialized to cause `make_caster<T>` to mean something other than the
+// default `type_caster<intrinsic_t<T>>`.  This is currently used below for `char*` casting to
+// distinguish between single-char casts and c-style string casts.
 
 template <typename CharT> using is_std_char_type = any_of<
     std::is_same<CharT, char>,
@@ -449,18 +452,11 @@ template <typename CharT> using is_std_char_type = any_of<
     std::is_same<CharT, char32_t>,
     std::is_same<CharT, wchar_t>
 >;
-template <typename CharT> struct use_pointer_caster<CharT, enable_if_t<is_std_char_type<CharT>::value>> :
-    std::true_type {};
-
-template <typename type, typename SFINAE = void> class type_caster : public type_caster_base<type> { };
-template <typename type> using make_caster = type_caster<
-    conditional_t<
-        all_of<satisfies_any_of<typename std::remove_reference<type>::type, std::is_pointer, std::is_array>,
-               use_pointer_caster<intrinsic_t<type>>>::value,
-        typename std::add_pointer<intrinsic_t<type>>::type,
-        intrinsic_t<type>
-    >
->;
+// char*, char[] and similar types go to the type_caster<char*>, not the type_caster<char>:
+template <typename CharT> struct make_caster_type<CharT, enable_if_t<
+    is_std_char_type<intrinsic_t<CharT>>::value &&
+    satisfies_any_of<typename std::remove_reference<CharT>::type, std::is_pointer, std::is_array>::value
+>> { using type = type_caster<intrinsic_t<CharT> *>; };
 
 // Shortcut for calling a caster's `cast_op_type` cast operator for casting a type_caster to a T
 template <typename T> typename make_caster<T>::template cast_op_type<T> cast_op(make_caster<T> &caster) {
