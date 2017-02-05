@@ -758,8 +758,8 @@ public:
 #endif
 
     static handle cast(CharT src, return_value_policy, handle) {
-        int codepoint = std::is_signed<CharT>::value ? (int) static_cast<typename std::make_unsigned<CharT>::type>(src) : (int) src;
-        return PyUnicode_FromFormat("%c", (int) codepoint);
+        char32_t codepoint = static_cast<typename std::make_unsigned<CharT>::type>(src);
+        return PyUnicode_Decode(reinterpret_cast<char*>(&codepoint), 4, "utf32", nullptr);
     }
 
     // chr()/unichr() isn't technically a type, but it should get the point across:
