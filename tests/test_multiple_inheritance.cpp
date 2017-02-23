@@ -43,6 +43,27 @@ test_initializer multiple_inheritance([](py::module &m) {
 
     py::class_<MIType, Base12>(m, "MIType")
         .def(py::init<int, int>());
+
+    // FIXME: Temporary to debug PyPy behaviour
+    m.def("debug_tp_bases", [](py::object pbo) {
+        PyObject *o = pbo.ptr();
+        if (PyType_Check(o)) {
+            PyTypeObject *t = (PyTypeObject *) o;
+            py::print("Type `{}' tp_bases:"_s.format(t->tp_name));
+            if (!PyTuple_Check(t->tp_bases)) {
+                py::print("    (null tp_bases)");
+            }
+            else {
+                for (int i = 0; i < PyTuple_GET_SIZE(t->tp_bases); i++) {
+                    PyObject *subtype = PyTuple_GET_ITEM(t->tp_bases, i);
+                    if (PyType_Check(subtype))
+                        py::print("    - {}"_s.format(((PyTypeObject *) subtype)->tp_name));
+                    else
+                        py::print("    - (unknown - not a type?)");
+                }
+            }
+        }
+    });
 });
 
 /* Test the case where not all base classes are specified,
