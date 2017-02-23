@@ -109,10 +109,22 @@ PYBIND11_NOINLINE inline std::vector<detail::type_info *> get_all_type_info(PyTy
                 if (known == tinfo) { found = true; break; }
             }
             if (!found) all_type_info.push_back(tinfo);
-        } else if (type->tp_bases) {
+        }
+#if !defined(PYPY_VERSION)
+        else if (type->tp_bases) {
             for (handle parent : reinterpret_borrow<tuple>(type->tp_bases))
                 check.push_back((PyTypeObject *) parent.ptr());
         }
+#else
+        // Workaround for PyPy issue #2480
+        else {
+            auto bases = reinterpret_steal<tuple>(PyObject_GetAttrString((PyObject *) type, "__bases__"));
+            if (bases) {
+                for (handle parent : bases)
+                    check.push_back((PyTypeObject *) parent.ptr());
+            }
+        }
+#endif
     }
     return all_type_info;
 }

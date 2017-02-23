@@ -149,6 +149,14 @@ inline PyTypeObject* make_default_metaclass() {
  * the constructor -- an `__init__` function must do that.
  */
 extern "C" PYBIND11_NOINLINE inline PyObject *pybind11_object_new(PyTypeObject *type, PyObject *, PyObject *) {
+#if defined(PYPY_VERSION)
+    // PyPy gets tp_basicsize wrong (issue 2482) under multiple inheritance when the first inherited
+    // object is a a plain Python type (i.e. not derived from an extension type).  Fix it.
+    ssize_t instance_size = static_cast<ssize_t>(sizeof(instance));
+    if (type->tp_basicsize < instance_size) {
+        type->tp_basicsize = instance_size;
+    }
+#endif
     PyObject *self = type->tp_alloc(type, 0);
     auto inst = reinterpret_cast<instance *>(self);
     auto types = get_all_type_info(type);
