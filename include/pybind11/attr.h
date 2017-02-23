@@ -171,9 +171,6 @@ struct type_record {
     /// How large is the underlying C++ type?
     size_t type_size = 0;
 
-    /// How large is pybind11::instance<type>?
-    size_t instance_size = 0;
-
     /// Function pointer to class_<..>::init_holder
     void (*init_holder)(PyObject *, const void *) = nullptr;
 

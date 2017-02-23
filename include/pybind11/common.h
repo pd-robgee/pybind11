@@ -328,18 +328,13 @@ inline static constexpr int log2(size_t n, int k = 0) { return (n <= 1) ? k : lo
 
 inline std::string error_string();
 
-/// Core part of the 'instance' type which POD (needed to be able to use 'offsetof')
-template <typename type> struct instance_essentials {
+/// The 'instance' type which needs to be standard layout (needed to be able to use 'offsetof')
+struct instance {
     PyObject_HEAD
-    type *value;
+    // pointer to storage of values and holder pointers: [val1*][holder1*][val2*][holder2*]...
+    void **values_and_holders;
     PyObject *weakrefs;
     bool owned : 1;
-    bool holder_constructed : 1;
-};
-
-/// PyObject wrapper around generic types, includes a special holder type that is responsible for lifetime management
-template <typename type, typename holder_type = std::unique_ptr<type>> struct instance : instance_essentials<type> {
-    holder_type holder;
 };
 
 struct overload_hash {
@@ -361,14 +356,11 @@ struct internals {
     std::unordered_map<std::string, void *> shared_data; // Custom data to be shared across extensions
     PyTypeObject *static_property_type;
     PyTypeObject *default_metaclass;
-    std::unordered_map<size_t, PyObject *> bases; // one base type per `instance_size` (very few)
+    PyObject *instance_base;
 #if defined(WITH_THREAD)
     decltype(PyThread_create_key()) tstate = 0; // Usually an int but a long on Cygwin64 with Python 3.x
     PyInterpreterState *istate = nullptr;
 #endif
-
-    /// Return the appropriate base type for the given instance size
-    PyObject *get_base(size_t instance_size);
 };
 
 /// Return a reference to the current 'internals' information
