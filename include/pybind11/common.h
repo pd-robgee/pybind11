@@ -297,19 +297,82 @@ inline static constexpr int log2(size_t n, int k = 0) { return (n <= 1) ? k : lo
 
 inline std::string error_string();
 
-/// Core part of the 'instance' type which POD (needed to be able to use 'offsetof')
-template <typename type> struct instance_essentials {
-    PyObject_HEAD
-    type *value;
-    PyObject *weakrefs;
-    bool owned : 1;
-    bool holder_constructed : 1;
+/** The space to allocate for simple layout instance holders (see below) in multiple of the size of
+ * a pointer (e.g.  2 means 16 bytes on 64-bit architectures).  The default is the minimum required
+ * to holder either a std::unique_ptr or std::shared_ptr (which is almost always
+ * sizeof(std::shared_ptr<T>)).
+ */
+constexpr size_t instance_simple_holder_in_ptrs() {
+    static_assert(sizeof(std::shared_ptr<int>) >= sizeof(std::unique_ptr<int>),
+            "pybind assumes std::shared_ptrs are at least as big as std::unique_ptrs");
+    return (sizeof(std::shared_ptr<int>) / sizeof(void *)) + (sizeof(std::shared_ptr<int>) % sizeof(void *) != 0);
+}
+
+// Forward declarations
+struct type_info;
+struct all_type_info;
+struct value_and_holder;
+struct all_type_info_data {
+    // For a single-inheritance class hierarchy (from Python's point of view; i.e. not counting
+    // pybind11-handled C++ MI), this will be the found typeinfo.  Will be nullptr if no base was
+    // found, or if multiple inheritance was found.
+    detail::type_info *typeinfo = nullptr;
+    // For a class using python-side MI, this will be the found typeinfo of all registered bases.
+    // Will be empty for non-MI classes, or if MI was found but had no registered bases.
+    std::vector<detail::type_info *> all;
 };
 
-/// PyObject wrapper around generic types, includes a special holder type that is responsible for lifetime management
-template <typename type, typename holder_type = std::unique_ptr<type>> struct instance : instance_essentials<type> {
-    holder_type holder;
+/// The 'instance' type which needs to be standard layout (need to be able to use 'offsetof')
+struct instance {
+    PyObject_HEAD
+    // Storage for pointers and holder; see simple_layout, below, for a description
+    union {
+        void *simple_value_holder[1 + instance_simple_holder_in_ptrs()];
+        void **values_and_holders;
+    };
+    // Storage space for an `all_type_info` instance tracking the type (or types) stored in this instance.
+    // Can't just use an `all_type_info_data` member here because the vector, in particular, might not be standard layout
+    alignas(all_type_info_data) unsigned char all_type_info_storage[sizeof(all_type_info_data)];
+    // Weak references (needed for keep alive):
+    PyObject *weakrefs;
+    /// If true, the pointer is owned which means we're free to manage it with a holder.
+    bool owned : 1;
+    /** An instance has two possible value/holder layouts.
+     *
+     * Simple layout (when this flag is true), means the `simple_value_holder` is set with a pointer
+     * and the holder object governing that pointer, i.e. [val1*][holder].  This layout is applied
+     * whenever there is no python-side multiple inheritance of bound C++ types *and* the type's
+     * holder will fit in the default space (which is large enough to hold either a std::unique_ptr
+     * or std::shared_ptr).
+     *
+     * Non-simple layout applies when using custom holders that require more space than `shared_ptr`
+     * (which is typically the size of two pointers), or when multiple inheritance is used on the
+     * python side.  Non-simple layout allocates the required amount of memory to have multiple
+     * bound C++ classes as parents.  Under this layout, `values_and_holders` is set to a pointer to
+     * allocated space of the required space to hold a holder-constructed bitset followed by a
+     * sequence of value pointers and holders, i.e. [bbb...][val1*][holder1][val2*][holder2]...
+     * where each [block] is rounded up to a multiple of `sizeof(void *)`.
+     */
+    bool simple_layout : 1;
+    /// For simple layout, tracks whether the holder has been constructed
+    bool simple_holder_constructed : 1;
+
+
+    /// Initializes all of the above type/values/holders data
+    void allocate_layout();
+
+    /// Destroys/deallocates all of the above
+    void deallocate_layout();
+
+    /// Accesses the all_type_info object associated with this instance.  Only available after
+    /// allocate_layout has been called.
+    const detail::all_type_info &all_type_info() const { return reinterpret_cast<const detail::all_type_info &>(all_type_info_storage); }
+
+    /// Returns the value_and_holder wrapper for the given type
+    value_and_holder get_value_and_holder(const type_info *find_type);
 };
+
+static_assert(std::is_standard_layout<instance>::value, "Internal error: `pybind11::detail::instance` is not standard layout!");
 
 struct overload_hash {
     inline size_t operator()(const std::pair<const PyObject *, const char *>& v) const {
@@ -323,21 +386,18 @@ struct overload_hash {
 struct internals {
     std::unordered_map<std::type_index, void*> registered_types_cpp;   // std::type_index -> type_info
     std::unordered_map<const void *, void*> registered_types_py;       // PyTypeObject* -> type_info
-    std::unordered_multimap<const void *, void*> registered_instances; // void * -> PyObject*
+    std::unordered_multimap<const void *, instance*> registered_instances; // void * -> instance*
     std::unordered_set<std::pair<const PyObject *, const char *>, overload_hash> inactive_overload_cache;
     std::unordered_map<std::type_index, std::vector<bool (*)(PyObject *, void *&)>> direct_conversions;
     std::forward_list<void (*) (std::exception_ptr)> registered_exception_translators;
     std::unordered_map<std::string, void *> shared_data; // Custom data to be shared across extensions
     PyTypeObject *static_property_type;
     PyTypeObject *default_metaclass;
-    std::unordered_map<size_t, PyObject *> bases; // one base type per `instance_size` (very few)
+    PyObject *instance_base;
 #if defined(WITH_THREAD)
     decltype(PyThread_create_key()) tstate = 0; // Usually an int but a long on Cygwin64 with Python 3.x
     PyInterpreterState *istate = nullptr;
 #endif
-
-    /// Return the appropriate base type for the given instance size
-    PyObject *get_base(size_t instance_size);
 };
 
 /// Return a reference to the current 'internals' information
