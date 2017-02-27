@@ -779,8 +779,9 @@ protected:
         auto *tinfo = new detail::type_info();
         tinfo->type = (PyTypeObject *) m_ptr;
         tinfo->type_size = rec.type_size;
+        tinfo->holder_size_in_ptrs = rec.holder_size / sizeof(void *) + (rec.holder_size % sizeof(void *) != 0);
         tinfo->init_holder = rec.init_holder;
-        tinfo->dealloc = rec.dealloc;
+        tinfo->destroy_holder = rec.destroy_holder;
 
         auto &internals = get_internals();
         auto tindex = std::type_index(*rec.type);
@@ -865,8 +866,9 @@ public:
         record.name = name;
         record.type = &typeid(type);
         record.type_size = sizeof(detail::conditional_t<has_alias, type_alias, type>);
+        record.holder_size = sizeof(holder_type);
         record.init_holder = init_holder;
-        record.dealloc = dealloc;
+        record.destroy_holder = destroy_holder;
         record.default_holder = std::is_same<holder_type, std::unique_ptr<type>>::value;
 
         /* Register base classes specified via template arguments to class_, if any */
@@ -1043,54 +1045,55 @@ public:
 private:
     /// Initialize holder object, variant 1: object derives from enable_shared_from_this
     template <typename T>
-    static void init_holder_helper(detail::instance *inst, const detail::value_and_holder &v_h,
+    static void init_holder_helper(detail::instance *inst, detail::value_and_holder &v_h,
             const holder_type * /* unused */, const std::enable_shared_from_this<T> * /* dummy */) {
         try {
-            v_h.holder = new holder_type(std::static_pointer_cast<typename holder_type::element_type>(
-                        v_h.value_as<type *>()->shared_from_this()));
+            new (&v_h.holder<holder_type>()) holder_type(std::static_pointer_cast<typename holder_type::element_type>(
+                        v_h.value_ptr<type>()->shared_from_this()));
+            v_h.set_holder_constructed();
         } catch (const std::bad_weak_ptr &) {
-            if (inst->owned)
-                v_h.holder = new holder_type(v_h.value_as<type *>());
+            if (inst->owned) {
+                new (&v_h.holder<holder_type>()) holder_type(v_h.value_ptr<type>());
+                v_h.set_holder_constructed();
+            }
         }
     }
 
     static void init_holder_from_existing(const detail::value_and_holder &v_h,
             const holder_type *holder_ptr, std::true_type /*is_copy_constructible*/) {
-        v_h.holder = new holder_type(*reinterpret_cast<const holder_type *>(holder_ptr));
+        new (&v_h.holder<holder_type>()) holder_type(*reinterpret_cast<const holder_type *>(holder_ptr));
     }
 
     static void init_holder_from_existing(const detail::value_and_holder &v_h,
             const holder_type *holder_ptr, std::false_type /*is_copy_constructible*/) {
-        v_h.holder = new holder_type(std::move(*const_cast<holder_type *>(holder_ptr)));
+        new (&v_h.holder<holder_type>()) holder_type(std::move(*const_cast<holder_type *>(holder_ptr)));
     }
 
     /// Initialize holder object, variant 2: try to construct from existing holder object, if possible
-    static void init_holder_helper(detail::instance *inst, const detail::value_and_holder &v_h,
+    static void init_holder_helper(detail::instance *inst, detail::value_and_holder &v_h,
             const holder_type *holder_ptr, const void * /* dummy -- not enable_shared_from_this<T>) */) {
         if (holder_ptr) {
             init_holder_from_existing(v_h, holder_ptr, std::is_copy_constructible<holder_type>());
+            v_h.set_holder_constructed();
         } else if (inst->owned || detail::always_construct_holder<holder_type>::value) {
-            v_h.holder = new holder_type(v_h.value_as<type *>());
+            new (&v_h.holder<holder_type>()) holder_type(v_h.value_ptr<type>());
+            v_h.set_holder_constructed();
         }
     }
 
     /// Initialize holder object of an instance, possibly given a pointer to an existing holder
     static void init_holder(PyObject *inst_, const void *holder_ptr) {
+        // FIXME: take v_h?
         auto inst = reinterpret_cast<detail::instance *>(inst_);
         auto v_h = detail::get_value_and_holder(inst, detail::get_type_info(typeid(type)));
-        init_holder_helper(inst, v_h, (const holder_type *) holder_ptr, v_h.value_as<type *>());
+        init_holder_helper(inst, v_h, (const holder_type *) holder_ptr, v_h.value_ptr<type>());
     }
 
-    static void dealloc(PyObject *inst_) {
-        auto inst = reinterpret_cast<detail::instance *>(inst_);
-        auto v_h = detail::get_value_and_holder(inst, detail::get_type_info(typeid(type)));
-        if (v_h.holder) {
-            delete v_h.holder_as<holder_type *>();
-            v_h.holder = nullptr;
-        }
-        else if (inst->owned) {
-            ::operator delete(v_h.value);
-        }
+    /// Deallocates the holder in the given value_holder.  Should only be called when the holder is
+    /// actually initialized.
+    static void destroy_holder(const detail::value_and_holder &v_h) {
+        v_h.holder<holder_type>().~holder_type();
+        //v_h.clear_holder_constructed();
     }
 
     static detail::function_record *get_function_record(handle h) {

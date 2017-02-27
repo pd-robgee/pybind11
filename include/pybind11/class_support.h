@@ -8,6 +8,7 @@
 */
 
 #pragma once
+#include <iostream>
 
 #include "attr.h"
 
@@ -136,6 +137,7 @@ inline PyTypeObject* make_default_metaclass() {
     type->tp_base = &PyType_Type;
     type->tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE | Py_TPFLAGS_HEAPTYPE;
 
+//    type->tp_new = pybind11_meta_new;
     type->tp_setattro = pybind11_meta_setattro;
 
     if (PyType_Ready(type) < 0)
@@ -143,6 +145,9 @@ inline PyTypeObject* make_default_metaclass() {
 
     return type;
 }
+
+// Assumption used in object_new, below.
+static_assert(sizeof(size_t) == sizeof(void *), "pybind assumes a pointer can holder a size_t");
 
 /** Instance creation function for all pybind11 types. It only allocates space for the C++ object
  * (or multiple objects, for Python-side inheritance from multiple pybind11 types), but doesn't call
@@ -159,20 +164,48 @@ extern "C" PYBIND11_NOINLINE inline PyObject *pybind11_object_new(PyTypeObject *
 #endif
     PyObject *self = type->tp_alloc(type, 0);
     auto inst = reinterpret_cast<instance *>(self);
-    auto types = get_all_type_info(type);
-
-    size_t space = 2 * types.size() * sizeof(void *);
-    inst->values_and_holders = (void **) ::operator new(space);
-    inst->owned = true;
-
+    auto types_it = type_info_iterator(type);
     auto &reg_inst = get_internals().registered_instances;
-    size_t i = 0;
-    for (auto tinfo : types) {
-        inst->values_and_holders[i] = ::operator new(tinfo->type_size);
-        reg_inst.emplace(inst->values_and_holders[i], self);
-        inst->values_and_holders[i+1] = nullptr;
-        i += 2;
+
+    // Simple path: no python-side multiple inheritance
+    if (!types_it.all) {
+        // Single type, so [b][v*][h] allocation
+        auto &tinfo = *types_it;
+        inst->values_and_holders = (void **) ::operator new(
+                sizeof(void *) * (2 + tinfo->holder_size_in_ptrs));
+        inst->values_and_holders[0] = 0;
+        inst->values_and_holders[1] = ::operator new(tinfo->type_size);
+        reg_inst.emplace(inst->values_and_holders[1], self);
     }
+    else { // multiple base types
+        // Allocate: [bb...][v1*][h1][v2*][h2]... where [vN*] is a value pointer, [hN] is the
+        // (uninitialized) holder instance for value N, and [bb...] is a bitfield that tracks
+        // whether the associated holder has been initialized.
+        auto &all = *types_it.all;
+        size_t n_types = all.size();
+        constexpr size_t bits_per_chunk = 8 * sizeof(void *);
+        const size_t flag_ptrs = n_types / bits_per_chunk + (n_types % bits_per_chunk != 0);
+        size_t space = flag_ptrs;
+        for (auto tinfo : all) {
+            space += sizeof(void *);
+            space += tinfo->holder_size_in_ptrs;
+        }
+
+        //pybind11::allocator<void *> alloc;
+        inst->values_and_holders = (void **) ::operator new(space * sizeof(void *));
+        for (size_t i = 0; i < flag_ptrs; i++) inst->values_and_holders[i] = 0;
+
+        // FIXME: could we make the default holder do destruction without allocation, and then allocate
+        // values instead of value pointers, when using these default holders?
+        // (I don't think it's possible)
+        size_t pos = flag_ptrs;
+        for (auto &tinfo : all) {
+            inst->values_and_holders[pos] = ::operator new(tinfo->type_size);
+            reg_inst.emplace(inst->values_and_holders[pos], self);
+            pos += 1 + tinfo->holder_size_in_ptrs;
+        }
+    }
+    inst->owned = true;
 
     return self;
 }
@@ -200,14 +233,22 @@ extern "C" inline void pybind11_object_dealloc(PyObject *self) {
     auto &registered_instances = get_internals().registered_instances;
     if (instance->values_and_holders) {
         auto self_type = Py_TYPE(self);
-        auto types = get_all_type_info(Py_TYPE(self));
+        auto types_it = type_info_iterator(Py_TYPE(self));
 
-        int i = 0;
-        for (auto tinfo : types) {
-            if (instance->values_and_holders[i]) {
-                tinfo->dealloc(self);
+        constexpr size_t bits_per_chunk = 8 * sizeof(void *);
+        const size_t n_types = types_it.size;
+        size_t pos = n_types / bits_per_chunk + (n_types % bits_per_chunk != 0);
+        size_t i = 0;
+        for (; types_it != type_info_iterator(); ++types_it) {
+            auto &tinfo = *types_it;
+            if (instance->values_and_holders[pos]) {
+                value_and_holder v_h(instance->values_and_holders, pos, i);
+                if (v_h.holder_constructed())
+                    tinfo->destroy_holder(v_h);
+                else if (instance->owned)
+                    ::operator delete(v_h.value_ptr<void>());
 
-                auto range = registered_instances.equal_range(instance->values_and_holders[i]);
+                auto range = registered_instances.equal_range(instance->values_and_holders[pos]);
                 bool found = false;
                 for (auto it = range.first; it != range.second; ++it) {
                     if (self_type == Py_TYPE(it->second)) {
@@ -220,8 +261,10 @@ extern "C" inline void pybind11_object_dealloc(PyObject *self) {
                     pybind11_fail("pybind11_object_dealloc(): Tried to deallocate unregistered instance!");
             }
 
-            i += 2;
+            pos += 1 + tinfo->holder_size_in_ptrs;
+            i++;
         }
+        ::operator delete(instance->values_and_holders);
     }
 
     if (instance->weakrefs)
@@ -440,6 +483,7 @@ inline PyObject* make_new_python_type(const type_record &rec) {
     type->tp_doc = tp_doc;
     type->tp_base = (PyTypeObject *) handle(base).inc_ref().ptr();
     type->tp_basicsize = static_cast<ssize_t>(sizeof(instance));
+    //type->tp_itemsize = 16;
     if (bases.size() > 0)
         type->tp_bases = bases.release().ptr();
 

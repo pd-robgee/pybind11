@@ -171,11 +171,14 @@ struct type_record {
     /// How large is the underlying C++ type?
     size_t type_size = 0;
 
+    /// How large is the type's holder?
+    size_t holder_size = 0;
+
     /// Function pointer to class_<..>::init_holder
     void (*init_holder)(PyObject *, const void *) = nullptr;
 
-    /// Function pointer to class_<..>::dealloc
-    void (*dealloc)(PyObject *) = nullptr;
+    /// Function pointer to class_<..>::destroy_holder
+    void (*destroy_holder)(const detail::value_and_holder &) = nullptr;
 
     /// List of base classes of the newly created type
     list bases;
