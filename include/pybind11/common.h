@@ -452,17 +452,6 @@ constexpr size_t constexpr_sum() { return 0; }
 template <typename T, typename... Ts>
 constexpr size_t constexpr_sum(T n, Ts... ns) { return size_t{n} + constexpr_sum(ns...); }
 
-/// Returns the number of the given template types with true ::values
-#if !defined(_MSC_VER)
-template <class... Ts> using number_of = std::integral_constant<size_t, constexpr_sum((size_t) (bool) Ts::value...)>;
-#else
-// MSVC workaround (2015 Update 3 has issues with some member type aliases and the above constexpr)
-template <class... Ts> struct number_of;
-template <> struct number_of<> : std::integral_constant<size_t, 0> {};
-template <class T, class... Ts> struct number_of<T, Ts...>
-    : std::integral_constant<size_t, (bool) T::value + number_of<Ts...>::value> {};
-#endif
-
 NAMESPACE_BEGIN(constexpr_impl)
 /// Implementation details for constexpr functions
 constexpr int first(int i) { return i; }
