@@ -171,6 +171,9 @@ struct type_record {
     /// How large is the underlying C++ type?
     size_t type_size = 0;
 
+    /// The allocator for an instance of the type
+    void *(*allocator)(size_t) = ::operator new;
+
     /// How large is pybind11::instance<type>?
     size_t instance_size = 0;
 

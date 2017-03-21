@@ -803,6 +803,7 @@ protected:
         auto *tinfo = new detail::type_info();
         tinfo->type = (PyTypeObject *) m_ptr;
         tinfo->type_size = rec.type_size;
+        tinfo->allocator = rec.allocator;
         tinfo->init_holder = rec.init_holder;
         tinfo->dealloc = rec.dealloc;
 
@@ -860,6 +861,16 @@ protected:
     }
 };
 
+// Default type allocator: uses ::operator new
+template <typename T, typename SFINAE = void> struct type_allocator {
+    static void *(*allocator())(size_t) { return ::operator new; }
+};
+// For types with a custom T::operator new(size_t) allocator use it
+template <typename T> struct type_allocator<T, enable_if_t<
+    std::is_same<void *, decltype(T::operator new(size_t()))>::value>> {
+    static void *(*allocator())(size_t) { return T::operator new; }
+};
+
 NAMESPACE_END(detail)
 
 template <typename type_, typename... options>
@@ -877,6 +888,7 @@ public:
     constexpr static bool has_alias = !std::is_void<type_alias>::value;
     using holder_type = detail::first_of_t<is_holder, std::unique_ptr<type>, options...>;
     using instance_type = detail::instance<type, holder_type>;
+    using alias_or_type = detail::conditional_t<has_alias, type_alias, type>;
 
     static_assert(detail::all_of<is_valid_class_option<options>...>::value,
             "Unknown/invalid class_ template parameters provided");
@@ -899,7 +911,8 @@ public:
         record.scope = scope;
         record.name = name;
         record.type = &typeid(type);
-        record.type_size = sizeof(conditional_t<has_alias, type_alias, type>);
+        record.type_size = sizeof(alias_or_type);
+        record.allocator = type_allocator<alias_or_type>::allocator();
         record.instance_size = sizeof(instance_type);
         record.init_holder = init_holder;
         record.dealloc = dealloc;

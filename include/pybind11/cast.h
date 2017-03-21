@@ -25,6 +25,7 @@ inline PyTypeObject *make_default_metaclass();
 struct type_info {
     PyTypeObject *type;
     size_t type_size;
+    void *(*allocator)(size_t count) = ::operator new;
     void (*init_holder)(PyObject *, const void *);
     void (*dealloc)(PyObject *);
     std::vector<PyObject *(*)(PyObject *, PyTypeObject *)> implicit_conversions;
