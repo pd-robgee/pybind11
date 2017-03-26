@@ -406,10 +406,12 @@ inline internals &get_internals();
 using std::enable_if_t;
 using std::conditional_t;
 using std::remove_cv_t;
+using std::remove_reference_t;
 #else
 template <bool B, typename T = void> using enable_if_t = typename std::enable_if<B, T>::type;
 template <bool B, typename T, typename F> using conditional_t = typename std::conditional<B, T, F>::type;
 template <typename T> using remove_cv_t = typename std::remove_cv<T>::type;
+template <typename T> using remove_reference_t = typename std::remove_reference<T>::type;
 #endif
 
 /// Index sequences
@@ -509,11 +511,11 @@ template <template<class> class Predicate, class Default> struct first_of<Predic
 };
 template <template<class> class Predicate, class Default, class T, class... Ts>
 struct first_of<Predicate, Default, T, Ts...> {
-    using type = typename std::conditional<
+    using type = conditional_t<
         Predicate<T>::value,
         T,
         typename first_of<Predicate, Default, Ts...>::type
-    >::type;
+    >;
 };
 template <template<class> class Predicate, class Default, class... T> using first_of_t = typename first_of<Predicate, Default, T...>::type;
 
