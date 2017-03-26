@@ -236,70 +236,13 @@ by the compiler. The result is returned as a NumPy array of type
 The scalar argument ``z`` is transparently replicated 4 times.  The input
 arrays ``x`` and ``y`` are automatically converted into the right types (they
 are of type  ``numpy.dtype.int64`` but need to be ``numpy.dtype.int32`` and
-``numpy.dtype.float32``, respectively)
+``numpy.dtype.float32``, respectively).
 
-Sometimes we might want to explicitly exclude an argument from the vectorization
-because it makes little sense to wrap it in a NumPy array. For instance,
-suppose the function signature was
+.. note::
 
-.. code-block:: cpp
-
-    double my_func(int x, float y, my_custom_type *z);
-
-This can be done with a stateful Lambda closure:
-
-.. code-block:: cpp
-
-    // Vectorize a lambda function with a capture object (e.g. to exclude some arguments from the vectorization)
-    m.def("vectorized_func",
-        [](py::array_t<int> x, py::array_t<float> y, my_custom_type *z) {
-            auto stateful_closure = [z](int x, float y) { return my_func(x, y, z); };
-            return py::vectorize(stateful_closure)(x, y);
-        }
-    );
-
-In cases where the computation is too complicated to be reduced to
-``vectorize``, it will be necessary to create and access the buffer contents
-manually. The following snippet contains a complete example that shows how this
-works (the code is somewhat contrived, since it could have been done more
-simply using ``vectorize``).
-
-.. code-block:: cpp
-
-    #include <pybind11/pybind11.h>
-    #include <pybind11/numpy.h>
-
-    namespace py = pybind11;
-
-    py::array_t<double> add_arrays(py::array_t<double> input1, py::array_t<double> input2) {
-        auto buf1 = input1.request(), buf2 = input2.request();
-
-        if (buf1.ndim != 1 || buf2.ndim != 1)
-            throw std::runtime_error("Number of dimensions must be one");
-
-        if (buf1.size != buf2.size)
-            throw std::runtime_error("Input shapes must match");
-
-        /* No pointer is passed, so NumPy will allocate the buffer */
-        auto result = py::array_t<double>(buf1.size);
-
-        auto buf3 = result.request();
-
-        double *ptr1 = (double *) buf1.ptr,
-               *ptr2 = (double *) buf2.ptr,
-               *ptr3 = (double *) buf3.ptr;
-
-        for (size_t idx = 0; idx < buf1.shape[0]; idx++)
-            ptr3[idx] = ptr1[idx] + ptr2[idx];
-
-        return result;
-    }
-
-    PYBIND11_PLUGIN(test) {
-        py::module m("test");
-        m.def("add_arrays", &add_arrays, "Add two NumPy arrays");
-        return m.ptr();
-    }
+    Only arithmetic, complex, and POD types passed by value or by ``const &``
+    reference are vectorized; all other arguments are passed through as-is.
+    Functions taking rvalue reference arguments cannot be vectorized.
 
 .. seealso::
 
