@@ -493,7 +493,7 @@ public:
 
     array(const pybind11::dtype &dt, const std::vector<size_t> &shape,
           const void *ptr = nullptr, handle base = handle())
-        : array(dt, shape, default_strides(shape, dt.itemsize()), ptr, base) { }
+        : array(dt, shape, c_strides(shape, dt.itemsize()), ptr, base) { }
 
     array(const pybind11::dtype &dt, size_t count, const void *ptr = nullptr,
           handle base = handle())
@@ -507,7 +507,7 @@ public:
     template <typename T>
     array(const std::vector<size_t> &shape, const T *ptr,
           handle base = handle())
-        : array(shape, default_strides(shape, sizeof(T)), ptr, base) { }
+        : array(shape, c_strides(shape, sizeof(T)), ptr, base) { }
 
     template <typename T>
     array(size_t count, const T *ptr, handle base = handle())
@@ -673,15 +673,21 @@ protected:
             throw std::domain_error("array is not writeable");
     }
 
-    static std::vector<size_t> default_strides(const std::vector<size_t>& shape, size_t itemsize) {
+    // Default, C-style strides
+    static std::vector<size_t> c_strides(const std::vector<size_t> &shape, size_t itemsize) {
         auto ndim = shape.size();
-        std::vector<size_t> strides(ndim);
-        if (ndim) {
-            std::fill(strides.begin(), strides.end(), itemsize);
-            for (size_t i = 0; i < ndim - 1; i++)
-                for (size_t j = 0; j < ndim - 1 - i; j++)
-                    strides[j] *= shape[ndim - 1 - i];
-        }
+        std::vector<size_t> strides(ndim, itemsize);
+        for (size_t i = ndim - 1; i > 0; --i)
+            strides[i - 1] = strides[i] * shape[i];
+        return strides;
+    }
+
+    // F-style strides; default when constructing an array_t with `ExtraFlags & f_style`
+    static std::vector<size_t> f_strides(const std::vector<size_t> &shape, size_t itemsize) {
+        auto ndim = shape.size();
+        std::vector<size_t> strides(ndim, itemsize);
+        for (size_t i = 1; i < ndim; ++i)
+            strides[i] = strides[i - 1] * shape[i - 1];
         return strides;
     }
 
@@ -736,7 +742,7 @@ public:
 
     explicit array_t(const std::vector<size_t> &shape, const T *ptr = nullptr,
             handle base = handle())
-        : array(shape, ptr, base) { }
+        : array(shape, ExtraFlags & f_style ? f_strides(shape, itemsize()) : c_strides(shape, itemsize()), ptr, base) { }
 
     explicit array_t(size_t count, const T *ptr = nullptr, handle base = handle())
         : array(count, ptr, base) { }
