@@ -252,14 +252,14 @@ protected:
     const unsigned char *data_;
     // Storing the shape & strides in local variables (i.e. these arrays) allows the compiler to
     // make large performance gains on big, nested loops, but requires compile-time dimensions
-    conditional_t<Dynamic, const size_t *, std::array<size_t, (size_t) Dims>>
-        shape_, strides_;
+    conditional_t<Dynamic, const size_t *, std::array<size_t, (size_t) Dims>> shape_;
+    conditional_t<Dynamic, const ssize_t *, std::array<ssize_t, (size_t) Dims>> strides_;
     const size_t dims_;
 
     friend class pybind11::array;
     // Constructor for compile-time dimensions:
     template <bool Dyn = Dynamic>
-    unchecked_reference(const void *data, const size_t *shape, const size_t *strides, enable_if_t<!Dyn, size_t>)
+    unchecked_reference(const void *data, const size_t *shape, const ssize_t *strides, enable_if_t<!Dyn, size_t>)
     : data_{reinterpret_cast<const unsigned char *>(data)}, dims_{Dims} {
         for (size_t i = 0; i < dims_; i++) {
             shape_[i] = shape[i];
@@ -268,7 +268,7 @@ protected:
     }
     // Constructor for runtime dimensions:
     template <bool Dyn = Dynamic>
-    unchecked_reference(const void *data, const size_t *shape, const size_t *strides, enable_if_t<Dyn, size_t> dims)
+    unchecked_reference(const void *data, const size_t *shape, const ssize_t *strides, enable_if_t<Dyn, size_t> dims)
     : data_{reinterpret_cast<const unsigned char *>(data)}, shape_{shape}, strides_{strides}, dims_{dims} {}
 
 public:
@@ -456,7 +456,7 @@ public:
     array() : array(0, static_cast<const double *>(nullptr)) {}
 
     array(const pybind11::dtype &dt, const std::vector<size_t> &shape,
-          const std::vector<size_t> &strides, const void *ptr = nullptr,
+          const std::vector<ssize_t> &strides, const void *ptr = nullptr,
           handle base = handle()) {
         auto& api = detail::npy_api::get();
         auto ndim = shape.size();
@@ -477,7 +477,7 @@ public:
         auto tmp = reinterpret_steal<object>(api.PyArray_NewFromDescr_(
             api.PyArray_Type_, descr.release().ptr(), (int) ndim,
             reinterpret_cast<Py_intptr_t *>(const_cast<size_t*>(shape.data())),
-            reinterpret_cast<Py_intptr_t *>(const_cast<size_t*>(strides.data())),
+            reinterpret_cast<Py_intptr_t *>(const_cast<ssize_t*>(strides.data())),
             const_cast<void *>(ptr), flags, nullptr));
         if (!tmp)
             pybind11_fail("NumPy: unable to create array!");
@@ -500,7 +500,7 @@ public:
         : array(dt, std::vector<size_t>{ count }, ptr, base) { }
 
     template<typename T> array(const std::vector<size_t>& shape,
-                               const std::vector<size_t>& strides,
+                               const std::vector<ssize_t>& strides,
                                const T* ptr, handle base = handle())
     : array(pybind11::dtype::of<T>(), shape, strides, (const void *) ptr, base) { }
 
@@ -559,12 +559,12 @@ public:
     }
 
     /// Strides of the array
-    const size_t* strides() const {
-        return reinterpret_cast<const size_t *>(detail::array_proxy(m_ptr)->strides);
+    const ssize_t* strides() const {
+        return reinterpret_cast<const ssize_t *>(detail::array_proxy(m_ptr)->strides);
     }
 
     /// Stride along a given axis
-    size_t strides(size_t dim) const {
+    ssize_t strides(size_t dim) const {
         if (dim >= ndim())
             fail_dim_check(dim, "invalid axis");
         return strides()[dim];
@@ -673,9 +673,9 @@ protected:
             throw std::domain_error("array is not writeable");
     }
 
-    static std::vector<size_t> default_strides(const std::vector<size_t>& shape, size_t itemsize) {
+    static std::vector<ssize_t> default_strides(const std::vector<size_t>& shape, size_t itemsize) {
         auto ndim = shape.size();
-        std::vector<size_t> strides(ndim);
+        std::vector<ssize_t> strides(ndim);
         if (ndim) {
             std::fill(strides.begin(), strides.end(), itemsize);
             for (size_t i = 0; i < ndim - 1; i++)
@@ -730,7 +730,7 @@ public:
     explicit array_t(const buffer_info& info) : array(info) { }
 
     array_t(const std::vector<size_t> &shape,
-            const std::vector<size_t> &strides, const T *ptr = nullptr,
+            const std::vector<ssize_t> &strides, const T *ptr = nullptr,
             handle base = handle())
         : array(shape, strides, ptr, base) { }
 
@@ -1103,7 +1103,7 @@ array_iterator<T> array_end(const buffer_info& buffer) {
 
 class common_iterator {
 public:
-    using container_type = std::vector<size_t>;
+    using container_type = std::vector<ssize_t>;
     using value_type = container_type::value_type;
     using size_type = container_type::size_type;
 
@@ -1145,7 +1145,7 @@ public:
         for (size_t i = 0; i < shape.size(); ++i)
             m_shape[i] = static_cast<container_type::value_type>(shape[i]);
 
-        container_type strides(shape.size());
+        std::vector<ssize_t> strides(shape.size());
         for (size_t i = 0; i < N; ++i)
             init_common_iterator(buffers[i], shape, m_common_iterator[i], strides);
     }
@@ -1173,7 +1173,7 @@ private:
 
     void init_common_iterator(const buffer_info &buffer,
                               const std::vector<size_t> &shape,
-                              common_iter &iterator, container_type &strides) {
+                              common_iter &iterator, std::vector<ssize_t> &strides) {
         auto buffer_shape_iter = buffer.shape.rbegin();
         auto buffer_strides_iter = buffer.strides.rbegin();
         auto shape_iter = shape.rbegin();
@@ -1181,7 +1181,7 @@ private:
 
         while (buffer_shape_iter != buffer.shape.rend()) {
             if (*shape_iter == *buffer_shape_iter)
-                *strides_iter = static_cast<size_t>(*buffer_strides_iter);
+                *strides_iter = *buffer_strides_iter;
             else
                 *strides_iter = 0;
 
@@ -1253,10 +1253,11 @@ broadcast_trivial broadcast(const std::array<buffer_info, N> &buffers, size_t &n
 
         // Check for C contiguity (but only if previous inputs were also C contiguous)
         if (trivial_broadcast_c) {
-            size_t expect_stride = buffers[i].itemsize;
+            ssize_t expect_stride = static_cast<ssize_t>(buffers[i].itemsize);
             auto end = buffers[i].shape.crend();
-            for (auto shape_iter = buffers[i].shape.crbegin(), stride_iter = buffers[i].strides.crbegin();
-                    trivial_broadcast_c && shape_iter != end; ++shape_iter, ++stride_iter) {
+            auto shape_iter = buffers[i].shape.crbegin();
+            auto stride_iter = buffers[i].strides.crbegin();
+            for (; trivial_broadcast_c && shape_iter != end; ++shape_iter, ++stride_iter) {
                 if (expect_stride == *stride_iter)
                     expect_stride *= *shape_iter;
                 else
@@ -1266,10 +1267,11 @@ broadcast_trivial broadcast(const std::array<buffer_info, N> &buffers, size_t &n
 
         // Check for Fortran contiguity (if previous inputs were also F contiguous)
         if (trivial_broadcast_f) {
-            size_t expect_stride = buffers[i].itemsize;
+            ssize_t expect_stride = static_cast<ssize_t>(buffers[i].itemsize);
             auto end = buffers[i].shape.cend();
-            for (auto shape_iter = buffers[i].shape.cbegin(), stride_iter = buffers[i].strides.cbegin();
-                    trivial_broadcast_f && shape_iter != end; ++shape_iter, ++stride_iter) {
+            auto shape_iter = buffers[i].shape.cbegin();
+            auto stride_iter = buffers[i].strides.cbegin();
+            for (; trivial_broadcast_f && shape_iter != end; ++shape_iter, ++stride_iter) {
                 if (expect_stride == *stride_iter)
                     expect_stride *= *shape_iter;
                 else
@@ -1306,10 +1308,10 @@ struct vectorize_helper {
         auto trivial = broadcast(buffers, ndim, shape);
 
         size_t size = 1;
-        std::vector<size_t> strides(ndim);
+        std::vector<ssize_t> strides(ndim);
         if (ndim > 0) {
             if (trivial == broadcast_trivial::f_trivial) {
-                strides[0] = sizeof(Return);
+                strides[0] = static_cast<ssize_t>(sizeof(Return));
                 for (size_t i = 1; i < ndim; ++i) {
                     strides[i] = strides[i - 1] * shape[i - 1];
                     size *= shape[i - 1];
@@ -1317,7 +1319,7 @@ struct vectorize_helper {
                 size *= shape[ndim - 1];
             }
             else {
-                strides[ndim-1] = sizeof(Return);
+                strides[ndim-1] = static_cast<ssize_t>(sizeof(Return));
                 for (size_t i = ndim - 1; i > 0; --i) {
                     strides[i - 1] = strides[i] * shape[i];
                     size *= shape[i];

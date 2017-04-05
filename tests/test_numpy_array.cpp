@@ -120,7 +120,7 @@ test_initializer numpy_array([](py::module &m) {
         return py::array(
             a.dtype(),
             std::vector<size_t>(a.shape(), a.shape() + a.ndim()),
-            std::vector<size_t>(a.strides(), a.strides() + a.ndim()),
+            std::vector<ssize_t>(a.strides(), a.strides() + a.ndim()),
             a.data(),
             a
         );

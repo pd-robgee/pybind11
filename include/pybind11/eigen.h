@@ -200,7 +200,8 @@ template <typename Type_> struct EigenProps {
 // otherwise it'll make a copy.  writeable lets you turn off the writeable flag for the array.
 template <typename props> handle eigen_array_cast(typename props::Type const &src, handle base = handle(), bool writeable = true) {
     constexpr size_t elem_size = sizeof(typename props::Scalar);
-    std::vector<size_t> shape, strides;
+    std::vector<size_t> shape;
+    std::vector<ssize_t> strides;
     if (props::vector) {
         shape.push_back(src.size());
         strides.push_back(elem_size * src.innerStride());
