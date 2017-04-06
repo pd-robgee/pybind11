@@ -154,7 +154,7 @@ def test_nonunit_stride_from_python():
     np.testing.assert_array_equal(counting_mat, [[0., 2, 2], [6, 16, 10], [6, 14, 8]])
 
 
-def test_negative_stride_from_python():
+def test_negative_stride_from_python(msg):
     from pybind11_tests import (
         double_row, double_col, double_complex, double_mat_cm, double_mat_rm,
         double_threec, double_threer)
@@ -182,9 +182,22 @@ def test_negative_stride_from_python():
         np.testing.assert_array_equal(double_mat_rm(ref_mat), 2.0 * ref_mat)
 
     # Mutator:
-    np.testing.assert_raises(TypeError, double_threer, second_row)
-    np.testing.assert_raises(TypeError, double_threec, second_col)
+    with pytest.raises(TypeError) as excinfo:
+        double_threer(second_row)
+    assert msg(excinfo.value) == """
+        double_threer(): incompatible function arguments. The following argument types are supported:
+            1. (numpy.ndarray[float32[1, 3], flags.writeable]) -> arg0: None
 
+        Invoked with: array([ 5.,  4.,  3.], dtype=float32)
+    """
+    with pytest.raises(TypeError) as excinfo:
+        double_threer(second_col)
+    assert msg(excinfo.value) == """
+        double_threer(): incompatible function arguments. The following argument types are supported:
+            1. (numpy.ndarray[float32[1, 3], flags.writeable]) -> arg0: None
+
+        Invoked with: array([ 7.,  4.,  1.], dtype=float32)
+    """
 
 def test_nonunit_stride_to_python():
     from pybind11_tests import diagonal, diagonal_1, diagonal_n, block
