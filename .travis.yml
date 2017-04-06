@@ -186,10 +186,12 @@ install:
     export CMAKE_EXTRA_ARGS="${CMAKE_EXTRA_ARGS} -DCMAKE_INCLUDE_PATH=$PWD/eigen-eigen-26667be4f70b"
   fi
 script:
-- $SCRIPT_RUN_PREFIX cmake ${CMAKE_EXTRA_ARGS}
+- export CMAKE_FULL_ARGS="${CMAKE_EXTRA_ARGS}
     -DPYBIND11_PYTHON_VERSION=$PYTHON
     -DPYBIND11_CPP_STANDARD=$CPP
-    -DPYBIND11_WERROR=${WERROR:-ON}
+    -DPYBIND11_WERROR=${WERROR:-ON}"
+- echo "Invoking cmake ${CMAKE_FULL_ARGS}"
+- $SCRIPT_RUN_PREFIX cmake ${CMAKE_FULL_ARGS}
 - $SCRIPT_RUN_PREFIX make -j2
 - $SCRIPT_RUN_PREFIX make check
 after_failure: cat tests/test_cmake_build/*.log
