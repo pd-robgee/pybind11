@@ -1313,7 +1313,7 @@ struct vectorize_helper {
             if (trivial == broadcast_trivial::f_trivial) {
                 strides[0] = static_cast<ssize_t>(sizeof(Return));
                 for (size_t i = 1; i < ndim; ++i) {
-                    strides[i] = strides[i - 1] * shape[i - 1];
+                    strides[i] = strides[i - 1] * static_cast<ssize_t>(shape[i - 1]);
                     size *= shape[i - 1];
                 }
                 size *= shape[ndim - 1];
@@ -1321,7 +1321,7 @@ struct vectorize_helper {
             else {
                 strides[ndim-1] = static_cast<ssize_t>(sizeof(Return));
                 for (size_t i = ndim - 1; i > 0; --i) {
-                    strides[i - 1] = strides[i] * shape[i];
+                    strides[i - 1] = strides[i] * static_cast<ssize_t>(shape[i]);
                     size *= shape[i];
                 }
                 size *= shape[0];
