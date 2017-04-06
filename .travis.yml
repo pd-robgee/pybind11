@@ -156,6 +156,9 @@ install:
     if [ -n "$DEBUG" ]; then
       PY_DEBUG="python$PY-dbg python$PY-scipy-dbg"
       export CMAKE_EXTRA_ARGS="${CMAKE_EXTRA_ARGS} -DPYTHON_EXECUTABLE=/usr/bin/python${PYTHON}dm"
+    elif [ "${PYTHON}-${CPP}-${GCC}" = "2.7-14-6" ]; then
+      # Test invocation with a non-full-path executable name:
+      export CMAKE_EXTRA_ARGS="${CMAKE_EXTRA_ARGS} -DPYTHON_EXECUTABLE:FILEPATH=python2"
     fi
     $SCRIPT_RUN_PREFIX sh -c "for s in 0 15; do sleep \$s; \
       apt-get -qy --no-install-recommends $APT_GET_EXTRA install \
