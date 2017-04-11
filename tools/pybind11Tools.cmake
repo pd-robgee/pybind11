@@ -190,8 +190,7 @@ function(pybind11_add_module target_name)
   endif()
 
   if(MSVC)
-    # /MP enables multithreaded builds (relevant when there are many files), /bigobj is
-    # needed for bigger binding projects due to the limit to 64k addressable sections
-    target_compile_options(${target_name} PRIVATE /MP /bigobj)
+    # /bigobj is needed for bigger binding projects due to the limit to 64k addressable sections
+    target_compile_options(${target_name} PRIVATE /bigobj)
   endif()
 endfunction()
