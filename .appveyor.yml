@@ -11,12 +11,13 @@ platform:
 environment:
   matrix:
   - CONDA: 36
+  - CONDA: 35
   - CONDA: 27
-matrix:
-  fast_finish: true  # Stop remaining jobs after a job failure
-  exclude:
-    - image: Visual Studio 2015
-      platform: x86
+#matrix:
+#  fast_finish: true  # Stop remaining jobs after a job failure
+#  exclude:
+#    - image: Visual Studio 2015
+#      platform: x86
 install:
 - ps: |
     if ($env:PLATFORM -eq "x64") { $env:CMAKE_ARCH = "x64" }
@@ -40,6 +41,6 @@ install:
 build_script:
 - cmake -G "%CMAKE_GENERATOR%" -A "%CMAKE_ARCH%" -DPYBIND11_WERROR=ON
 - set MSBuildLogger="C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll"
-- cmake --build . --config Release --target pytest -- /v:m /logger:%MSBuildLogger%
-- cmake --build . --config Release --target test_cmake_build -- /v:m /logger:%MSBuildLogger%
+- cmake --build . --config Release --target pytest -- /v:diag
+- cmake --build . --config Release --target test_cmake_build -- /v:diag
 on_failure: if exist "tests\test_cmake_build" type tests\test_cmake_build\*.log
