@@ -12,7 +12,7 @@ platform:
 - x64
 - x86
 matrix:
-  fast_finish: true  # Stop remaining jobs after a job failure
+#  fast_finish: true  # Stop remaining jobs after a job failure
   exclude:
     - image: Visual Studio 2015
       platform: x86
