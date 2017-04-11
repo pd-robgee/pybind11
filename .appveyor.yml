@@ -3,15 +3,18 @@ image:
 - Visual Studio 2017
 - Visual Studio 2015
 test: off
+build:
+  parallel: true
 platform:
 - x64
 - x86
 environment:
   matrix:
   - CONDA: 36
+  - CONDA: 35
   - CONDA: 27
-matrix:
-  fast_finish: true  # Stop remaining jobs after a job failure
+#matrix:
+#  fast_finish: true  # Stop remaining jobs after a job failure
 install:
 - ps: |
     if ($env:PLATFORM -eq "x64") { $env:CMAKE_ARCH = "x64" }
