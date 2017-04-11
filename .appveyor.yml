@@ -16,10 +16,6 @@ matrix:
   exclude:
     - image: Visual Studio 2015
       platform: x86
-init:
-  - ps: iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
-on_finish:
-  - ps: $blockRdp = $true; iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
 install:
 - ps: |
     if ($env:PLATFORM -eq "x64") { $env:CMAKE_ARCH = "x64" }
@@ -41,10 +37,9 @@ install:
     7z x 3.3.3.zip -y > $null
     $env:CMAKE_INCLUDE_PATH = "eigen-eigen-67e894c6cd8f"
 build_script:
-- ps: |
-    Get-WmiObject -class Win32_processor | ft systemname,Name,DeviceID,NumberOfCores,NumberOfLogicalProcessors,Addresswidth
 - cmake -G "%CMAKE_GENERATOR%" -A "%CMAKE_ARCH%" -DPYBIND11_WERROR=ON
 - set MSBuildLogger="C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll"
 - cmake --build . --config Release --target pytest -- /v:m /logger:%MSBuildLogger%
 - cmake --build . --config Release --target test_cmake_build -- /v:m /logger:%MSBuildLogger%
-on_failure: if exist "tests\test_cmake_build" type tests\test_cmake_build\*.log
+on_failure:
+  - ps: $blockRdp = $true; iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
