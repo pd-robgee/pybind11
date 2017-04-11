@@ -191,6 +191,6 @@ function(pybind11_add_module target_name)
 
   if(MSVC)
     # /bigobj is needed for bigger binding projects due to the limit to 64k addressable sections
-    target_compile_options(${target_name} PRIVATE /bigobj)
+    target_compile_options(${target_name} PRIVATE /bigobj /MP)
   endif()
 endfunction()
