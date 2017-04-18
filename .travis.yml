@@ -5,6 +5,9 @@ matrix:
   include:
   - os: linux
     env: PYTHON=2.7 CPP=11 GCC=4.8
+    addons:
+      apt:
+        packages: [cmake]
 before_install:
 - |
   apt-cache show cmake
