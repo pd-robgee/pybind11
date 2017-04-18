@@ -1360,15 +1360,15 @@ public:
                 "holder, python object, or value");
 
         handle cl_type(cl);
-        cl.def("__init__", [cl_type,
-            #if defined(PYBIND11_CPP14) || defined(_MSC_VER)
-            f = std::move(this->f)
-            #else
-            f
-            #endif
-        ] (handle self, Args... args) {
+        #if defined(PYBIND11_CPP14) || defined(_MSC_VER)
+        cl.def("__init__", [cl_type, func = std::move(f)]
+        #else
+        Func func = std::move(f);
+        cl.def("__init__", [cl_type, func]
+        #endif
+        (handle self, Args... args) {
             auto *inst = (Inst<Class> *) self.ptr();
-            construct<Class>(inst, f(std::forward<Args>(args)...), cl_type, factory_type<Class>());
+            construct<Class>(inst, func(std::forward<Args>(args)...), cl_type, factory_type<Class>());
         }, extra...);
     }
 
