@@ -1,5 +1,6 @@
 language: cpp
 sudo: false
+dist: trusty
 matrix:
   include:
   - os: linux
@@ -87,6 +88,13 @@ cache:
   - $HOME/Library/Caches/pip
 before_install:
 - |
+  apt-cache show cmake
+  for c in `which -a cmake`; do
+    echo "$c:"
+    $c --version
+  done
+  apt-get -qy install cmake
+  apt-cache show cmake
   for c in `which -a cmake`; do
     echo "$c:"
     $c --version
