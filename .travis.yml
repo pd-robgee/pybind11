@@ -5,87 +5,6 @@ matrix:
   include:
   - os: linux
     env: PYTHON=2.7 CPP=11 GCC=4.8
-    addons:
-      apt:
-        sources: [ubuntu-toolchain-r-test, kubuntu-backports]
-        packages: [g++-4.8, cmake]
-  - os: linux
-    env: PYTHON=3.5 CPP=11 GCC=4.8
-    addons:
-      apt:
-        sources: [ubuntu-toolchain-r-test, kubuntu-backports, deadsnakes]
-        packages: [g++-4.8, cmake, python3.5-dev]
-  - sudo: true
-    services: docker
-    env: PYTHON=2.7 CPP=14 GCC=6
-  - sudo: true
-    services: docker
-    env: PYTHON=3.5 CPP=14 GCC=6 DEBUG=1
-  - sudo: true
-    services: docker
-    env: PYTHON=3.5 CPP=17 GCC=7
-  - sudo: true
-    services: docker
-    env: PYTHON=3.5 CPP=17 CLANG=4.0
-  - os: osx
-    osx_image: xcode7.3
-    env: PYTHON=2.7 CPP=14 CLANG
-  - os: osx
-    osx_image: xcode7.3
-    env: PYTHON=3.6 CPP=14 CLANG
-  # Test a PyPy 2.7 build
-  - os: linux
-    dist: trusty
-    env: PYPY=5.7 PYTHON=2.7 CPP=11 GCC=4.8
-    addons:
-      apt:
-        packages: [g++-4.8, cmake]
-  - sudo: true
-    services: docker
-    env: ARCH=i386 PYTHON=3.5 CPP=14 GCC=6
-  # This next one does a make install *before* testing, then builds the tests against the installed version:
-  - sudo: true
-    services: docker
-    env: PYTHON=3.5 CPP=14 CLANG=3.9 INSTALL=1
-    script:
-      - |
-        $SCRIPT_RUN_PREFIX sh -c "set -e
-        cmake ${CMAKE_EXTRA_ARGS} -DPYBIND11_INSTALL=1 -DPYBIND11_TEST=0
-        make install
-        cp -a tests /pybind11-tests
-        mkdir /build-tests && cd /build-tests
-        cmake ../pybind11-tests ${CMAKE_EXTRA_ARGS} -DPYBIND11_WERROR=ON
-        make pytest -j 2"
-  # A barebones build makes sure everything still works without optional deps (numpy/scipy/eigen)
-  # and also tests the automatic discovery functions in CMake (Python version, C++ standard).
-  - os: linux
-    env: BAREBONES
-    addons:
-      apt:
-        sources: [ubuntu-toolchain-r-test, kubuntu-backports]
-        packages: [g++-4.8, cmake]
-    install: pip install pytest
-  # Documentation build:
-  - os: linux
-    language: docs
-    env: DOCS STYLE LINT
-    install:
-    - pip install --upgrade sphinx sphinx_rtd_theme flake8 pep8-naming
-    - |
-      curl -fsSL ftp://ftp.stack.nl/pub/users/dimitri/doxygen-1.8.12.linux.bin.tar.gz | tar xz
-      export PATH="$PWD/doxygen-1.8.12/bin:$PATH"
-      pip install https://github.com/michaeljones/breathe/archive/master.zip
-    script:
-    - make -C docs html SPHINX_OPTIONS=-W
-    - tools/check-style.sh
-    - flake8
-  allow_failures:
-    - env: PYTHON=3.5 CPP=17 GCC=7
-    - env: PYTHON=3.5 CPP=17 CLANG=4.0
-cache:
-  directories:
-  - $HOME/.cache/pip
-  - $HOME/Library/Caches/pip
 before_install:
 - |
   apt-cache show cmake
@@ -93,7 +12,7 @@ before_install:
     echo "$c:"
     $c --version
   done
-  apt-get -qy install cmake
+  apt-get -qy install --reinstall cmake
   apt-cache show cmake
   for c in `which -a cmake`; do
     echo "$c:"
