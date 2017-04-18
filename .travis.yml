@@ -87,6 +87,12 @@ cache:
   - $HOME/Library/Caches/pip
 before_install:
 - |
+  for c in `which -a cmake`; do
+    echo "$c:"
+    $c --version
+  done
+  exit 1
+- |
   # Configure build variables
   if [ "$TRAVIS_OS_NAME" = "linux" ]; then
     if [ -n "$CLANG" ]; then
