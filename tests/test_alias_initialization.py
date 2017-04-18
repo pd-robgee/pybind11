@@ -1,7 +1,7 @@
 import pytest
 
 
-def test_alias_delay_initialization1(capture):
+def test_alias_delay_initialization1(capture, msg):
     """
     A only initializes its trampoline class when we inherit from it; if we just
     create and use an A instance directly, the trampoline initialization is
@@ -36,6 +36,19 @@ def test_alias_delay_initialization1(capture):
         In python f()
         PyA.~PyA()
     """
+
+    # Check doc string and failure for the proper type (not just "handle") in the output
+    assert A.__init__.__doc__ == "__init__(self: pybind11_tests.A) -> None\n"
+    with pytest.raises(TypeError) as excinfo:
+        A(1, 2)
+    assert msg(excinfo.value) == """
+        __init__(): incompatible constructor arguments. The following argument types are supported:
+            1. m.A()
+
+        Invoked with: 1, 2
+    """
+
+    assert A.self_as_handle.__doc__ == "self_as_handle(self: pybind11_tests.A) -> None\n";
 
 
 def test_alias_delay_initialization2(capture):

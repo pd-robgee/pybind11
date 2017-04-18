@@ -32,7 +32,8 @@ test_initializer alias_initialization([](py::module &m) {
 
     py::class_<A, PyA>(m, "A")
         .def(py::init<>())
-        .def("f", &A::f);
+        .def("f", &A::f)
+        .def("self_as_handle", [](py::handle) {});
 
     m.def("call_f", call_f);
 

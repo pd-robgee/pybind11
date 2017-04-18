@@ -230,7 +230,16 @@ protected:
                 const std::type_info *t = types[type_index++];
                 if (!t)
                     pybind11_fail("Internal error while parsing type signature (1)");
-                if (auto tinfo = detail::get_type_info(*t)) {
+
+                detail::type_info *tinfo = nullptr;
+                // If this is the first arg of a constructor (i.e. self) and is `handle`,
+                // replace it with the class (handle is used internally when dealing with
+                // aliases and factory initializers).
+                if (arg_index == 0 && rec->is_method && t == &typeid(handle) && PyType_Check(rec->scope.ptr()))
+                    tinfo = detail::get_type_info((PyTypeObject *) rec->scope.ptr());
+                if (!tinfo)
+                    tinfo = detail::get_type_info(*t);
+                if (tinfo) {
 #if defined(PYPY_VERSION)
                     signature += handle((PyObject *) tinfo->type)
                                      .attr("__module__")
