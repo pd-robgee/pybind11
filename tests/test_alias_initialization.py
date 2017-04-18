@@ -48,7 +48,7 @@ def test_alias_delay_initialization1(capture, msg):
         Invoked with: 1, 2
     """
 
-    assert A.self_as_handle.__doc__ == "self_as_handle(self: pybind11_tests.A) -> None\n";
+    assert A.self_as_handle.__doc__ == "self_as_handle(self: pybind11_tests.A) -> None\n"
 
 
 def test_alias_delay_initialization2(capture):

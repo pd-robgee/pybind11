@@ -144,7 +144,8 @@ def test_static_constructor():
 
     with pytest.raises(TypeError) as excinfo:
         TestFactory3(1, 1.0)
-    assert str(excinfo.value) == "__init__() factory function returned an object with multiple references"
+    assert (str(excinfo.value) ==
+            "__init__() factory function returned an object with multiple references")
     with pytest.raises(TypeError) as excinfo:
         TestFactory3(2, 2)
     assert (str(excinfo.value) ==
