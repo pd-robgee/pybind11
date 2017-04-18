@@ -1161,7 +1161,7 @@ private:
         init_holder_helper(inst, (const holder_type *) holder_ptr, inst->value);
     }
 
-    template <typename, typename, typename...> friend class detail::init_factory;
+    template <typename, typename, typename...> friend struct detail::init_factory;
 
     static void dealloc(PyObject *inst_) {
         instance_type *inst = (instance_type *) inst_;
