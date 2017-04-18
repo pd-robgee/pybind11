@@ -185,6 +185,25 @@ inline PyTypeObject* make_default_metaclass() {
     return type;
 }
 
+inline void register_instance(void *self) {
+    auto *inst = (instance_essentials<void> *) self;
+    get_internals().registered_instances.emplace(inst->value, self);
+}
+
+inline bool deregister_instance(void *self) {
+    auto *inst = (instance_essentials<void> *) self;
+    auto type = Py_TYPE(inst);
+    auto &registered_instances = get_internals().registered_instances;
+    auto range = registered_instances.equal_range(inst->value);
+    for (auto it = range.first; it != range.second; ++it) {
+        if (type == Py_TYPE(it->second)) {
+            registered_instances.erase(it);
+            return true;
+        }
+    }
+    return false;
+}
+
 /// Instance creation function for all pybind11 types. It only allocates space for the
 /// C++ object, but doesn't call the constructor -- an `__init__` function must do that.
 extern "C" inline PyObject *pybind11_object_new(PyTypeObject *type, PyObject *, PyObject *) {
@@ -194,7 +213,7 @@ extern "C" inline PyObject *pybind11_object_new(PyTypeObject *type, PyObject *, 
     instance->value = tinfo->operator_new(tinfo->type_size);
     instance->owned = true;
     instance->holder_constructed = false;
-    get_internals().registered_instances.emplace(instance->value, self);
+    register_instance(self);
     return self;
 }
 
@@ -213,25 +232,15 @@ extern "C" inline int pybind11_object_init(PyObject *self, PyObject *, PyObject 
     return -1;
 }
 
-/// Instance destructor function for all pybind11 types. It calls `type_info.dealloc`
-/// to destroy the C++ object itself, while the rest is Python bookkeeping.
-extern "C" inline void pybind11_object_dealloc(PyObject *self) {
+/// Clears all internal data from the instance and removes it from registered instances in
+/// preparation for deallocation.
+inline void clear_instance(PyObject *self) {
     auto instance = (instance_essentials<void> *) self;
     if (instance->value) {
         auto type = Py_TYPE(self);
         get_type_info(type)->dealloc(self);
 
-        auto &registered_instances = get_internals().registered_instances;
-        auto range = registered_instances.equal_range(instance->value);
-        bool found = false;
-        for (auto it = range.first; it != range.second; ++it) {
-            if (type == Py_TYPE(it->second)) {
-                registered_instances.erase(it);
-                found = true;
-                break;
-            }
-        }
-        if (!found)
+        if (!deregister_instance(self))
             pybind11_fail("pybind11_object_dealloc(): Tried to deallocate unregistered instance!");
 
         if (instance->weakrefs)
@@ -241,6 +250,12 @@ extern "C" inline void pybind11_object_dealloc(PyObject *self) {
         if (dict_ptr)
             Py_CLEAR(*dict_ptr);
     }
+}
+
+/// Instance destructor function for all pybind11 types. It calls `type_info.dealloc`
+/// to destroy the C++ object itself, while the rest is Python bookkeeping.
+extern "C" inline void pybind11_object_dealloc(PyObject *self) {
+    clear_instance(self);
     Py_TYPE(self)->tp_free(self);
 }
 

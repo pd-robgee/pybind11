@@ -366,6 +366,35 @@ In other words, :func:`init` creates an anonymous function that invokes an
 in-place constructor. Memory allocation etc. is already take care of beforehand
 within pybind11.
 
+Factory function constructors
+=============================
+
+When binding a C++ type that creates new instances through a factory function
+or static method, it is sometimes desirable to bind C++ factory function as a Python
+constructor rather than a Python factory function.  This is available through
+the ``py::init_factory`` wrapper:
+
+.. code-block:: cpp
+
+    class Example {
+        // ...
+        static Example *create(int a) { return new Example(a); }
+    };
+
+    py::class_<Example>(m, "Example")
+        // Bind an existing pointer-returning factory function:
+        .def(py::init_factory(&Example::create))
+        // Similar, but returns the pointer wrapped in a holder:
+        .def("__init__", []() {
+            return std::unique_ptr<Example>(new Example(arg, "another arg"));
+        })
+        // Can overload these with regular constructors, too:
+        .def(py::init<double>())
+        ;
+
+When the constructor is invoked from Python, pybind11 will call the factory
+function and store the resulting C++ instance in the Python instance.
+
 .. _classes_with_non_public_destructors:
 
 Non-public destructors

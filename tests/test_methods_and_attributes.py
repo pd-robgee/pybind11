@@ -117,6 +117,58 @@ def test_static_properties():
     assert TypeOverride.def_readonly_static == 99
 
 
+def test_static_constructor():
+    from pybind11_tests import TestFactory1, TestFactory2, TestFactory3
+
+    x1 = TestFactory1(3)
+    assert x1.value == "3"
+    y1 = TestFactory1()
+    assert y1.value == "(empty)"
+    z1 = TestFactory1("hi!")
+    assert z1.value == "hi!"
+
+    y2 = TestFactory2()
+    assert y2.value == "(empty2)"
+    x2 = TestFactory2(7)
+    assert x2.value == "7"
+    z2 = TestFactory2("hi again")
+    assert z2.value == "hi again"
+
+    w3 = TestFactory3(7.7)
+    y3 = TestFactory3()
+    assert y3.value == "(empty3)"
+    x3 = TestFactory3(42)
+    assert x3.value == "42"
+    z3 = TestFactory3("bye")
+    assert z3.value == "bye"
+
+    with pytest.raises(TypeError) as excinfo:
+        TestFactory3(1, 1.0)
+    assert str(excinfo.value) == "__init__() factory function returned an object with multiple references"
+    with pytest.raises(TypeError) as excinfo:
+        TestFactory3(2, 2)
+    assert (str(excinfo.value) ==
+            "__init__() factory function returned an unowned reference")
+
+    cstats = [ConstructorStats.get(c) for c in [TestFactory1, TestFactory2, TestFactory3]]
+    assert [i.alive() for i in cstats] == [3, 3, 6]
+    TestFactory3.cleanup_leaks()
+    assert [i.alive() for i in cstats] == [3, 3, 4]
+    del x1, y2, y3, z3
+    assert [i.alive() for i in cstats] == [2, 2, 2]
+    del x2, x3
+    assert [i.alive() for i in cstats] == [2, 1, 1]
+    del y1, z1, z2, w3
+    assert [i.alive() for i in cstats] == [0, 0, 0]
+
+    assert [i.values() for i in cstats] == [
+        ["3", "hi!"],
+        ["7", "hi again"],
+        ["8", "42", "bye", "2", "4"]
+    ]
+    assert [i.default_constructions for i in cstats] == [1, 1, 1]
+
+
 def test_static_cls():
     """Static property getter and setters expect the type object as the their only argument"""
     from pybind11_tests import TestProperties as Type

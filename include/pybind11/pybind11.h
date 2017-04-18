@@ -1007,6 +1007,12 @@ public:
         return *this;
     }
 
+    template <typename... Args, typename... Extra>
+    class_ &def(detail::init_factory<Args...> &&init, const Extra&... extra) {
+        std::move(init).execute(*this, extra...);
+        return *this;
+    }
+
     template <typename Func> class_& def_buffer(Func &&func) {
         struct capture { Func func; };
         capture *ptr = new capture { std::forward<Func>(func) };
@@ -1155,6 +1161,8 @@ private:
         init_holder_helper(inst, (const holder_type *) holder_ptr, inst->value);
     }
 
+    template <typename, typename, typename...> friend class detail::init_factory;
+
     static void dealloc(PyObject *inst_) {
         instance_type *inst = (instance_type *) inst_;
         if (inst->holder_constructed)
@@ -1295,7 +1303,177 @@ template <typename... Args> struct init_alias {
         cl.def("__init__", [](Alias *self_, Args... args) { new (self_) Alias(args...); }, extra...);
     }
 };
+template <typename Func, typename Return, typename... Args> struct init_factory {
+private:
+    using PlainReturn = typename std::remove_pointer<Return>::type;
+    using ForwardReturn = typename std::add_rvalue_reference<Return>::type;
 
+    template <typename Class> using Cpp = typename Class::type;
+    template <typename Class> using Alias = typename Class::type_alias;
+    template <typename Class> using Inst = typename Class::instance_type;
+    template <typename Class> using Holder = typename Class::holder_type;
+
+    template <typename Class, typename SFINAE = void> struct alias_constructible : std::false_type {};
+    template <typename Class> struct alias_constructible<Class, enable_if_t<Class::has_alias && all_of<
+            std::is_convertible<Return, Alias<Class>>, std::is_constructible<Alias<Class>, Alias<Class> &&>,
+            std::is_convertible<Return, Cpp<Class>>, std::is_constructible<Cpp<Class>, Cpp<Class> &&>>::value>>
+        : std::true_type {};
+
+    // We accept a return value in the following categories, in order of precedence:
+    struct wraps_pointer_tag {};
+    struct wraps_holder_tag {};
+    struct wraps_pyobject_tag {};
+    struct wraps_alias_tag {};
+    struct wraps_value_tag {};
+    struct invalid_factory_return_type {};
+
+    // Resolve the combination of Class and Return value to exactly one of the above tags:
+    template <typename Class> using factory_type =
+        // a pointer of the actual or a derived type:
+        conditional_t<std::is_pointer<Return>::value && std::is_base_of<Cpp<Class>, PlainReturn>::value,
+            wraps_pointer_tag,
+        // a holder:
+        conditional_t<std::is_convertible<Holder<Class>, Return>::value,
+            wraps_holder_tag,
+        // a python object (with compatible type checking and failure at runtime):
+        conditional_t<std::is_convertible<Return, handle>::value,
+            wraps_pyobject_tag,
+        // Two accept-by-value versions: the first is for classes with an alias where the returned value
+        // is convertible to either the alias or the value:
+        conditional_t<alias_constructible<Class>::value,
+            wraps_alias_tag,
+        // Accept-by-value with no alias or a return value not convertible to the alias (e.g. a
+        // Cpp<Class> value itself):
+        conditional_t<std::is_convertible<Return, Cpp<Class>>::value && std::is_constructible<Cpp<Class>, Cpp<Class> &&>::value,
+            wraps_value_tag,
+        invalid_factory_return_type>>>>>;
+
+public:
+    // Constructor: takes the function/lambda to call
+    init_factory(Func &&f) : f{std::move(f)} {}
+
+    template <typename Class, typename... Extra>
+    void execute(Class &cl, const Extra&... extra) && {
+        // Some checks against various types of failure that we can detect at compile time:
+        static_assert(!std::is_same<factory_type<Class>, invalid_factory_return_type>::value,
+                "pybind11::init_factory(): wrapped factory function must return a compatible pointer, "
+                "holder, python object, or value");
+
+        handle cl_type(cl);
+        cl.def("__init__", [cl_type,
+            #if defined(PYBIND11_CPP14) || defined(_MSC_VER)
+            f = std::move(this->f)
+            #else
+            f
+            #endif
+        ] (handle self, Args... args) {
+            auto *inst = (Inst<Class> *) self.ptr();
+            construct<Class>(inst, f(std::forward<Args>(args)...), cl_type, factory_type<Class>());
+        }, extra...);
+    }
+
+protected:
+    template <typename Class> static void dealloc(Inst<Class> *self) {
+        // Reset/unallocate the existing values
+        clear_instance((PyObject *) self);
+        self->value = nullptr;
+        self->owned = true;
+        self->holder_constructed = false;
+    }
+
+    template <typename Class>
+    static void construct(Inst<Class> *self, Cpp<Class> *result, handle /*cl_type*/, wraps_pointer_tag) {
+        // We were given a pointer to CppClass (or some derived type); dealloc the existing value
+        // and replace it with the given pointer; the dispatcher will then set up the holder for us
+        // after we return from the lambda.
+        dealloc<Class>(self);
+        self->value = result;
+        register_instance(self);
+    }
+
+    template <typename Class>
+    static void construct(Inst<Class> *self, Holder<Class> holder, handle /*cl_type*/, wraps_holder_tag) {
+        // We were returned a holder; copy its pointer, and move/copy the holder into place.
+        dealloc<Class>(self);
+        self->value = holder_helper<Holder<Class>>::get(holder);
+        Class::init_holder((PyObject *) self, &holder);
+        register_instance(self);
+    }
+
+    template <typename Class>
+    static void construct(Inst<Class> *self, handle result, handle cl_type, wraps_pyobject_tag tag) {
+        // We were given a raw handle; steal it and forward to the py::object version
+        construct<Class>(self, reinterpret_steal<object>(result), cl_type, tag);
+    }
+    template <typename Class>
+    static void construct(Inst<Class> *self, object result, handle /*cl_type*/, wraps_pyobject_tag) {
+        // Lambda returned a py::object (or something derived from it)
+
+        // Make sure we actually got something
+        if (!result)
+            throw type_error("__init__() factory function returned a null python object");
+
+        auto *result_inst = (Inst<Class> *) result.ptr();
+        auto type = Py_TYPE(self);
+
+        // Make sure the factory function gave us exactly the right type (we don't allow
+        // up/down-casting here):
+        if (Py_TYPE(result_inst) != type)
+            throw type_error(std::string("__init__() factory function should return '") + type->tp_name +
+                "', not '" + Py_TYPE(result_inst)->tp_name + "'");
+        // The factory function must give back a unique reference:
+        if (result.ref_count() != 1)
+            throw type_error("__init__() factory function returned an object with multiple references");
+        // Guard against accidentally specifying a reference r.v. policy or similar:
+        if (!result_inst->owned)
+            throw type_error("__init__() factory function returned an unowned reference");
+
+        // Steal the instance internals:
+        dealloc<Class>(self);
+        std::swap(self->value, result_inst->value);
+        std::swap(self->weakrefs, result_inst->weakrefs);
+        if (type->tp_dictoffset != 0)
+            std::swap(*_PyObject_GetDictPtr((PyObject *) self), *_PyObject_GetDictPtr((PyObject *) result_inst));
+        // Now steal the holder
+        Class::init_holder((PyObject *) self, &result_inst->holder);
+        // Find the instance we just stole and update its PyObject from `result` to `self`
+        auto range = get_internals().registered_instances.equal_range(self->value);
+        for (auto it = range.first; it != range.second; ++it) {
+            if (type == Py_TYPE(it->second)) {
+                it->second = self;
+                break;
+            }
+        }
+    }
+
+    // wrap return-by-value, version 1: returns a cpp object (or something convertible to it) by
+    // value.  (Returned values convertible to the alias class (if any) use the next version.)
+    template <typename Class>
+    static void construct(Inst<Class> *self, Cpp<Class> result, handle /*cl_type*/, wraps_value_tag) {
+        new (self->value) Cpp<Class>(std::move(result));
+    }
+
+    // Same as above, but when an alias class is involved and the return value is convertible to the
+    // alias (which typically *won't* be called for direct CppClass return).
+    template <typename Class>
+    static void construct(Inst<Class> *self, Return &&result, handle cl_type, wraps_alias_tag) {
+        if (Py_TYPE(self) == (PyTypeObject *) cl_type.ptr())
+            construct_alias<Class>(self, std::forward<Return>(result));
+        else
+            construct<Class>(self, std::forward<Return>(result), cl_type, wraps_value_tag());
+    }
+    template <typename Class>
+    static void construct_alias(Inst<Class> *self, Alias<Class> result) {
+        new (self->value) Alias<Class>(std::move(result));
+    }
+
+    Func f;
+};
+// Helper definition to infer the detail::init_factory template type from a callable object
+template <typename Func, typename Return, typename... Args>
+init_factory<Func, Return, Args...> init_factory_decltype(Return (*)(Args...));
+template <typename Func> using init_factory_t = decltype(init_factory_decltype<Func>(
+    (typename detail::remove_class<decltype(&std::remove_reference<Func>::type::operator())>::type *) nullptr));
 
 inline void keep_alive_impl(handle nurse, handle patient) {
     /* Clever approach based on weak references taken from Boost.Python */
@@ -1332,6 +1510,19 @@ NAMESPACE_END(detail)
 
 template <typename... Args> detail::init<Args...> init() { return detail::init<Args...>(); }
 template <typename... Args> detail::init_alias<Args...> init_alias() { return detail::init_alias<Args...>(); }
+/// Construct a factory function constructor wrapper from a vanilla function pointer
+template <typename Return, typename... Args>
+detail::init_factory<Return (*)(Args...), Return, Args...> init_factory(Return (*f)(Args...)) {
+    return f;
+}
+/// Construct a factory function constructor wrapper from a lambda function (possibly with internal state)
+template <typename Func, typename = detail::enable_if_t<
+    detail::satisfies_none_of<
+        typename std::remove_reference<Func>::type,
+        std::is_function, std::is_pointer, std::is_member_pointer
+    >::value>
+>
+detail::init_factory_t<Func> init_factory(Func &&f) { return std::move(f); }
 
 /// Makes a python iterator from a first and past-the-end C++ InputIterator.
 template <return_value_policy Policy = return_value_policy::reference_internal,

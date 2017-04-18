@@ -10,6 +10,7 @@
 
 #include "pybind11_tests.h"
 #include "constructor_stats.h"
+#include <cmath>
 
 class ExampleMandA {
 public:
@@ -162,6 +163,88 @@ public:
 /// Issue/PR #648: bad arg default debugging output
 class NotRegistered {};
 
+// Classes for testing python construction via C++ factory function:
+// Not publically constructible, copyable, or movable:
+class TestFactory1 {
+    friend class TestFactoryHelper;
+    TestFactory1() : value("(empty)") { print_default_created(this); }
+    TestFactory1(int v) : value(std::to_string(v)) { print_created(this, value); }
+    TestFactory1(std::string v) : value(std::move(v)) { print_created(this, value); }
+    TestFactory1(TestFactory1 &&) = delete;
+    TestFactory1(const TestFactory1 &) = delete;
+    TestFactory1 &operator=(TestFactory1 &&) = delete;
+    TestFactory1 &operator=(const TestFactory1 &) = delete;
+public:
+    std::string value;
+    ~TestFactory1() { print_destroyed(this); }
+};
+// Non-public construction, but moveable:
+class TestFactory2 {
+    friend class TestFactoryHelper;
+    TestFactory2() : value("(empty2)") { print_default_created(this); }
+    TestFactory2(int v) : value(std::to_string(v)) { print_created(this, value); }
+    TestFactory2(std::string v) : value(std::move(v)) { print_created(this, value); }
+public:
+    TestFactory2(TestFactory2 &&m) { value = std::move(m.value); print_move_created(this); }
+    TestFactory2 &operator=(TestFactory2 &&m) { value = std::move(m.value); print_move_assigned(this); return *this; }
+    std::string value;
+    ~TestFactory2() { print_destroyed(this); }
+};
+// Mixed direct/factory construction:
+class TestFactory3 {
+    friend class TestFactoryHelper;
+    TestFactory3() : value("(empty3)") { print_default_created(this); }
+    TestFactory3(int v) : value(std::to_string(v)) { print_created(this, value); }
+public:
+    TestFactory3(std::string v) : value(std::move(v)) { print_created(this, value); }
+    TestFactory3(TestFactory3 &&m) { value = std::move(m.value); print_move_created(this); }
+    TestFactory3 &operator=(TestFactory3 &&m) { value = std::move(m.value); print_move_assigned(this); return *this; }
+    std::string value;
+    ~TestFactory3() { print_destroyed(this); }
+};
+
+
+// Stash leaked values here so we can clean up at the end of the test:
+py::object leak1;
+TestFactory3 *leak2, *leak3;
+class TestFactoryHelper {
+public:
+    // Return via pointer:
+    static TestFactory1 *construct1() { return new TestFactory1(); }
+    // Holder:
+    static std::unique_ptr<TestFactory1> construct1(int a) { return std::unique_ptr<TestFactory1>(new TestFactory1(a)); }
+    // pointer again
+    static TestFactory1 *construct1(std::string a) { return new TestFactory1(a); }
+
+    // pointer:
+    static TestFactory2 *construct2() { return new TestFactory2(); }
+    // holder:
+    static std::unique_ptr<TestFactory2> construct2(int a) { return std::unique_ptr<TestFactory2>(new TestFactory2(a)); }
+    // by value moving:
+    static TestFactory2 construct2(std::string a) { return TestFactory2(a); }
+
+    // pointer:
+    static TestFactory3 *construct3() { return new TestFactory3(); }
+    // holder:
+    static std::unique_ptr<TestFactory3> construct3(int a) { return std::unique_ptr<TestFactory3>(new TestFactory3(a)); }
+    // by object:
+    static py::object construct3(double a) {
+        return py::cast(new TestFactory3((int) std::lround(a)), py::return_value_policy::take_ownership); }
+
+    // Invalid values:
+    // Multiple references:
+    static py::object construct_bad3a(double v) {
+        auto o = construct3(v);
+        leak1 = o;
+        return o;
+    }
+    // Unowned pointer:
+    static py::object construct_bad3b(int v) {
+        leak2 = new TestFactory3(v);
+        return py::cast(leak2, py::return_value_policy::reference);
+    }
+};
+
 test_initializer methods_and_attributes([](py::module &m) {
     py::class_<ExampleMandA>(m, "ExampleMandA")
         .def(py::init<>())
@@ -238,6 +321,39 @@ test_initializer methods_and_attributes([](py::module &m) {
         .def_property_static("static_cls",
                              [](py::object cls) { return cls; },
                              [](py::object cls, py::function f) { f(cls); });
+
+    py::class_<TestFactory1>(m, "TestFactory1")
+        .def(py::init_factory([](int v) { return TestFactoryHelper::construct1(v); })) // pointer
+        .def(py::init_factory([](std::string v) { return TestFactoryHelper::construct1(v); })) // unique_ptr
+        .def(py::init_factory([]() { return TestFactoryHelper::construct1(); })) // pointer
+        .def_readwrite("value", &TestFactory1::value)
+        ;
+    py::class_<TestFactory2>(m, "TestFactory2")
+        .def(py::init_factory([](int v) { return TestFactoryHelper::construct2(v); })) // pointer
+        .def(py::init_factory([](std::string v) { return TestFactoryHelper::construct2(v); })) // unique_ptr
+        .def(py::init_factory([]() { return TestFactoryHelper::construct2(); })) // move
+        .def_readwrite("value", &TestFactory2::value)
+        ;
+    py::class_<TestFactory3>(m, "TestFactory3")
+        .def(py::init_factory([](int v) { return TestFactoryHelper::construct3(v); })) // pointer
+        .def(py::init_factory([]() { return TestFactoryHelper::construct3(); })) // unique_ptr
+        .def("__init__", [](TestFactory3 &self, std::string v) { new (&self) TestFactory3(v); }) // regular ctor
+        .def(py::init_factory([](double v) { return TestFactoryHelper::construct3(v); })) // object
+        .def(py::init_factory([](int a, double b) { return TestFactoryHelper::construct_bad3a(a + b); })) // multi-ref object
+        .def(py::init_factory([](int a, int b) { return TestFactoryHelper::construct_bad3b(a + b); })) // unowned ptr
+        // wrong type returned (should trigger static_assert failure if uncommented):
+        //.def(py::init_factory([](double a, int b) { return TestFactoryHelper::construct2((int) (a + b)); }))
+
+        .def_readwrite("value", &TestFactory3::value)
+        .def_static("cleanup_leaks", []() {
+            leak1 = py::object();
+            // Make sure they aren't referenced before deleting them:
+            if (py::detail::get_internals().registered_instances.count(leak2) == 0)
+                delete leak2;
+            if (py::detail::get_internals().registered_instances.count(leak2) == 0)
+                delete leak3;
+        })
+        ;
 
     py::class_<TestPropertiesOverride, TestProperties>(m, "TestPropertiesOverride")
         .def(py::init<>())
