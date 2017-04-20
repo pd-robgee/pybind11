@@ -701,7 +701,7 @@ protected:
             PyErr_SetString(PyExc_TypeError, msg.c_str());
             return nullptr;
         } else {
-            if (overloads->is_constructor) {
+            if (overloads->is_constructor && !((instance_essentials<void> *) parent.ptr())->holder_constructed) {
                 /* When a constructor ran successfully, the corresponding
                    holder type (e.g. std::unique_ptr) must still be initialized. */
                 auto tinfo = get_type_info(Py_TYPE(parent.ptr()));
@@ -1008,6 +1008,10 @@ public:
         return *this;
     }
 
+    // Implementation in pybind11/factory.h (which isn't included by default!)
+    template <typename... Args, typename... Extra>
+    class_ &def(detail::init_factory<Args...> &&init, const Extra&... extra);
+
     template <typename Func> class_& def_buffer(Func &&func) {
         struct capture { Func func; };
         capture *ptr = new capture { std::forward<Func>(func) };
@@ -1155,6 +1159,8 @@ private:
         auto inst = (instance_type *) inst_;
         init_holder_helper(inst, (const holder_type *) holder_ptr, inst->value);
     }
+
+    template <typename, typename, typename...> friend struct detail::init_factory;
 
     static void dealloc(PyObject *inst_) {
         instance_type *inst = (instance_type *) inst_;

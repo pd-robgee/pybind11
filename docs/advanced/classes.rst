@@ -366,6 +366,51 @@ In other words, :func:`init` creates an anonymous function that invokes an
 in-place constructor. Memory allocation etc. is already take care of beforehand
 within pybind11.
 
+Factory function constructors
+=============================
+
+When binding a C++ type that creates new instances through a factory function
+or static method, it is sometimes desirable to bind C++ factory function as a Python
+constructor rather than a Python factory function.  This is available through
+the ``py::init_factory`` wrapper, available when including the extra header
+``pybind11/factory.h``:
+
+.. code-block:: cpp
+
+    #include <pybind11/factory.h>
+    class Example {
+        // ...
+        static Example *create(int a) { return new Example(a); }
+    };
+    py::class_<Example>(m, "Example")
+        // Bind an existing pointer-returning factory function:
+        .def(py::init_factory(&Example::create))
+        // Similar, but returns the pointer wrapped in a holder:
+        .def(py::init_factory([](std::string arg) {
+            return std::unique_ptr<Example>(new Example(arg, "another arg"));
+        }))
+        // Can overload these with regular constructors, too:
+        .def(py::init<double>())
+        ;
+
+When the constructor is invoked from Python, pybind11 will call the factory
+function and store the resulting C++ instance in the Python instance.
+
+In addition to the examples shown above, ``py::init_factory`` supports
+up-casting or down-casting returned derived or base class pointers,
+respectively.  The latter will raise an exception if the factory function
+pointer cannot be cast (via ``dynamic_cast``) to the required instance.  Up-
+and down-casting is also permitted for ``std::shared_ptr`` factory return
+values.
+
+Factory functions that return an object by value are also supported as long as
+the type is moveable or copyable.
+
+Finally, factory functions may return existing an existing Python object via a
+``py::object`` wrapper instance; a run-time check is performed during
+construction that only allows a Python object of type being created (i.e. a
+Python ``Example`` instance in the example above).
+
 .. _classes_with_non_public_destructors:
 
 Non-public destructors
