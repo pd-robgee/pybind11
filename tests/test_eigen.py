@@ -647,3 +647,10 @@ def test_custom_operator_new():
     o = CustomOperatorNew()
     np.testing.assert_allclose(o.a, 0.0)
     np.testing.assert_allclose(o.b.diagonal(), 1.0)
+
+
+def test_issue818():
+    from pybind11_tests import return_eigen_map
+
+    m = return_eigen_map()
+    assert np.all(m == np.array([[0, 3, 6], [1, 4, 7], [2, 5, 8]]))

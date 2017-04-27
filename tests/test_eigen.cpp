@@ -69,6 +69,14 @@ struct CustomOperatorNew {
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
 };
 
+static Eigen::Map<Eigen::Matrix3i> return_eigen_map() {
+  static int array[9];
+  for (int ii = 0; ii < 9; ++ii) {
+    array[ii] = ii;
+  }
+  return Eigen::Map<Eigen::Matrix3i>(array);
+}
+
 test_initializer eigen([](py::module &m) {
     typedef Eigen::Matrix<float, 5, 6, Eigen::RowMajor> FixedMatrixR;
     typedef Eigen::Matrix<float, 5, 6> FixedMatrixC;
@@ -298,4 +306,7 @@ test_initializer eigen([](py::module &m) {
         .def(py::init<>())
         .def_readonly("a", &CustomOperatorNew::a)
         .def_readonly("b", &CustomOperatorNew::b);
+
+    // Issue #818: segfault when returning Eigen::Map
+    m.def("return_eigen_map", &return_eigen_map);
 });
