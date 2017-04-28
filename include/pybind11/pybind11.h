@@ -1713,11 +1713,43 @@ inline function get_type_overload(const void *this_ptr, const detail::type_info 
     return overload;
 }
 
+static_assert(std::is_same<void, void>::value, "adf");
+
 template <class T> function get_overload(const T *this_ptr, const char *name) {
     auto tinfo = detail::get_type_info(typeid(T));
     return tinfo ? get_type_overload(this_ptr, tinfo, name) : function();
 }
 
+
+template <typename Return, typename Class, typename BaseClass, typename... Args>
+Return overload(Class *self, Return (BaseClass::*memfn)(Args...), const char *method, Args&&... args) {
+    gil_scoped_acquire gil;
+    function overload = get_overload(self, method);
+    if (overload) {
+        auto o = overload(std::forward<Args>(args)...);
+        if (detail::cast_is_temporary_value_reference<Return>::value) {
+            static detail::overload_caster_t<Return> caster;
+            return detail::cast_ref<Return>(std::move(o), caster);
+        }
+        else
+            return pybind11::detail::cast_safe<Return>(std::move(o));
+    }
+    if (memfn)
+        return (self->*memfn)(std::forward<Args>(args)...);
+    else
+        pybind11_fail("Tried to call pure virtual function \"" + type_id<Class>() + "::" + method + "\"");
+}
+
+#if 1
+#define PYBIND11_OVERLOAD_NAME(ret_type, cname, name, fn, ...) \
+    return pybind11::overload(this, &cname::fn, name, ##__VA_ARGS__);
+#define PYBIND11_OVERLOAD_PURE_NAME(ret_type, cname, name, fn, ...) \
+    return pybind11::overload(this, nullptr, name, ##__VA_ARGS__);
+#define PYBIND11_OVERLOAD(ret_type, cname, fn, ...) \
+    return pybind11::overload(this, &cname::fn, #fn, ##__VA_ARGS__);
+#define PYBIND11_OVERLOAD_PURE(ret_type, cname, fn, ...) \
+    return pybind11::overload(this, nullptr, #fn, ##__VA_ARGS__);
+#else
 #define PYBIND11_OVERLOAD_INT(ret_type, cname, name, ...) { \
         pybind11::gil_scoped_acquire gil; \
         pybind11::function overload = pybind11::get_overload(static_cast<const cname *>(this), name); \
@@ -1744,6 +1776,7 @@ template <class T> function get_overload(const T *this_ptr, const char *name) {
 
 #define PYBIND11_OVERLOAD_PURE(ret_type, cname, fn, ...) \
     PYBIND11_OVERLOAD_PURE_NAME(ret_type, cname, #fn, fn, __VA_ARGS__)
+#endif
 
 NAMESPACE_END(pybind11)
 
