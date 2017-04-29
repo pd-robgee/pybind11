@@ -93,11 +93,9 @@ public:
     int get() override { PYBIND11_OVERLOAD(int, TestFactory6, get, /*no args*/); }
 };
 
-// Stash leaked values here so we can clean up at the end of the test:
-py::object leak1;
-TestFactory3 *leak2, *leak3;
 class TestFactoryHelper {
 public:
+    // Non-movable, non-copyable type:
     // Return via pointer:
     static TestFactory1 *construct1() { return new TestFactory1(); }
     // Holder:
@@ -105,6 +103,7 @@ public:
     // pointer again
     static TestFactory1 *construct1(std::string a) { return new TestFactory1(a); }
 
+    // Moveable type:
     // pointer:
     static TestFactory2 *construct2() { return new TestFactory2(); }
     // holder:
@@ -112,26 +111,11 @@ public:
     // by value moving:
     static TestFactory2 construct2(std::string a) { return TestFactory2(a); }
 
+    // shared_ptr holder type:
     // pointer:
     static TestFactory3 *construct3() { return new TestFactory3(); }
     // holder:
     static std::shared_ptr<TestFactory3> construct3(int a) { return std::shared_ptr<TestFactory3>(new TestFactory3(a)); }
-    // by object:
-    static py::object construct3(double a) {
-        return py::cast(new TestFactory3((int) std::lround(a)), py::return_value_policy::take_ownership); }
-
-    // Invalid values:
-    // Multiple references:
-    static py::object construct_bad3a(double v) {
-        auto o = construct3(v);
-        leak1 = o;
-        return o;
-    }
-    // Unowned pointer:
-    static py::object construct_bad3b(int v) {
-        leak2 = new TestFactory3(v);
-        return py::cast(leak2, py::return_value_policy::reference);
-    }
 };
 
 test_initializer factory_constructors([](py::module &m) {
@@ -145,11 +129,7 @@ test_initializer factory_constructors([](py::module &m) {
     MAKE_TAG_TYPE(pointer);
     MAKE_TAG_TYPE(unique_ptr);
     MAKE_TAG_TYPE(move);
-    MAKE_TAG_TYPE(object);
     MAKE_TAG_TYPE(shared_ptr);
-    MAKE_TAG_TYPE(raw_object);
-    MAKE_TAG_TYPE(multiref);
-    MAKE_TAG_TYPE(unowned);
     MAKE_TAG_TYPE(derived);
     MAKE_TAG_TYPE(TF4);
     MAKE_TAG_TYPE(TF5);
@@ -163,14 +143,6 @@ test_initializer factory_constructors([](py::module &m) {
         .def(py::init_factory([](pointer_tag, int v) { return TestFactoryHelper::construct1(v); }))
         .def(py::init_factory([](unique_ptr_tag, std::string v) { return TestFactoryHelper::construct1(v); }))
         .def(py::init_factory([](pointer_tag) { return TestFactoryHelper::construct1(); }))
-        // Takes a python function that returns the instance:
-        .def(py::init_factory([](py::function f) { return f(123); }))
-        // Sets a fallback python factory function (gets called if none of the above match):
-        .def_static("set_ctor_fallback", [](py::function f) {
-            auto tf1 = py::reinterpret_borrow<py::class_<TestFactory1>>(
-                    py::module::import("pybind11_tests").attr("TestFactory1"));
-            tf1.def(py::init_factory([f]() { return f(); }));
-        })
         .def_readwrite("value", &TestFactory1::value)
         ;
     py::class_<TestFactory2>(m, "TestFactory2")
@@ -182,25 +154,16 @@ test_initializer factory_constructors([](py::module &m) {
     int c = 1;
     // Stateful & reused:
     auto c4a = [c](pointer_tag, TF4_tag, int a) { return new TestFactory4(a);};
-    auto c4b = [](object_tag, TF4_tag, int a) {
-        return py::cast(new TestFactory4(a), py::return_value_policy::take_ownership); };
 
     py::class_<TestFactory3, std::shared_ptr<TestFactory3>>(m, "TestFactory3")
         .def(py::init_factory([](pointer_tag, int v) { return TestFactoryHelper::construct3(v); }))
         .def(py::init_factory([](shared_ptr_tag) { return TestFactoryHelper::construct3(); }))
         .def("__init__", [](TestFactory3 &self, std::string v) { new (&self) TestFactory3(v); }) // regular ctor
-        // Stateful lambda returning py::object:
-        .def(py::init_factory([c](object_tag, int v) { return TestFactoryHelper::construct3(double(v + c)); }))
-        .def(py::init_factory([](raw_object_tag, double v) {
-            auto o = TestFactoryHelper::construct3(v); return o.release().ptr(); }))
-        .def(py::init_factory([](multiref_tag, double v) { return TestFactoryHelper::construct_bad3a(v); })) // multi-ref object
-        .def(py::init_factory([](unowned_tag, int v) { return TestFactoryHelper::construct_bad3b(v); })) // unowned ptr
         // wrong type returned (should trigger static_assert failure if uncommented):
         //.def(py::init_factory([](double a, int b) { return TestFactoryHelper::construct2((int) (a + b)); }))
 
         // factories returning a derived type:
         .def(py::init_factory(c4a)) // derived ptr
-        .def(py::init_factory(c4b)) // derived py::object: fails; object up/down-casting currently not supported
         .def(py::init_factory([](pointer_tag, TF5_tag, int a) { return new TestFactory5(a); }))
         .def(py::init_factory([](pointer_tag, TF5_tag, int a) { return new TestFactory5(a); }))
         // derived shared ptr:
@@ -211,18 +174,9 @@ test_initializer factory_constructors([](py::module &m) {
         .def(py::init_factory([](null_ptr_tag) { return (TestFactory3 *) nullptr; }))
 
         .def_readwrite("value", &TestFactory3::value)
-        .def_static("cleanup_leaks", []() {
-            leak1 = py::object();
-            // Make sure they aren't referenced before deleting them:
-            if (py::detail::get_internals().registered_instances.count(leak2) == 0)
-                delete leak2;
-            if (py::detail::get_internals().registered_instances.count(leak2) == 0)
-                delete leak3;
-        })
         ;
     py::class_<TestFactory4, TestFactory3, std::shared_ptr<TestFactory4>>(m, "TestFactory4")
         .def(py::init_factory(c4a)) // pointer
-        .def(py::init_factory(c4b)) // py::object
         // Valid downcasting test:
         .def(py::init_factory([](shared_ptr_tag, base_tag, int a) {
             return std::shared_ptr<TestFactory3>(new TestFactory4(a)); }))

@@ -55,7 +55,6 @@ private:
     struct wraps_pointer_tag {};
     struct wraps_holder_tag {};
     struct wraps_base_shared_ptr_tag {};
-    struct wraps_pyobject_tag {};
     struct wraps_value_tag {};
     struct invalid_factory_return_type {};
 
@@ -71,13 +70,10 @@ private:
         // shared_ptr to a base or derived type (only accepted if this type's holder is also shared_ptr)
         conditional_t<is_shared_base<Class>::value,
             wraps_base_shared_ptr_tag,
-        // a python object (with compatible type checking and failure at runtime):
-        conditional_t<std::is_convertible<Return, handle>::value,
-            wraps_pyobject_tag,
         // Accept-by-value: a return convertible to the cpp type and/or the alias:
         conditional_t<alias_constructible<Class>::value || cpp_constructible<Class>::value,
             wraps_value_tag,
-        invalid_factory_return_type>>>>>;
+        invalid_factory_return_type>>>>;
 
 public:
     // Constructor: takes the function/lambda to call
@@ -88,7 +84,7 @@ public:
         // Some checks against various types of failure that we can detect at compile time:
         static_assert(!std::is_same<factory_type<Class>, invalid_factory_return_type>::value,
                 "pybind11::init_factory(): wrapped factory function must return a compatible pointer, "
-                "holder, python object, or value");
+                "holder, or value");
 
         PyTypeObject *cl_type = (PyTypeObject *) cl.ptr();
         #if defined(PYBIND11_CPP14) || defined(_MSC_VER)
@@ -156,52 +152,6 @@ protected:
         if (!h)
             throw type_error("__init__() factory failed: could not cast shared base class pointer");
         construct<Class>(self, std::move(h), cl_type, wraps_holder_tag());
-    }
-
-    template <typename Class>
-    static void construct(Inst<Class> *self, handle result, PyTypeObject *cl_type, wraps_pyobject_tag tag) {
-        // We were given a raw handle; steal it and forward to the py::object version
-        construct<Class>(self, reinterpret_steal<object>(result), cl_type, tag);
-    }
-    template <typename Class>
-    static void construct(Inst<Class> *self, object result, PyTypeObject *, wraps_pyobject_tag) {
-        // Lambda returned a py::object (or something derived from it)
-
-        // Make sure we actually got something
-        if (!result)
-            throw type_error("__init__() factory function returned a null python object");
-
-        auto *result_inst = (Inst<Class> *) result.ptr();
-        auto type = Py_TYPE(self);
-
-        // Make sure the factory function gave us exactly the right type (we don't allow
-        // up/down-casting here):
-        if (Py_TYPE(result_inst) != type)
-            throw type_error(std::string("__init__() factory function should return '") + type->tp_name +
-                "', not '" + Py_TYPE(result_inst)->tp_name + "'");
-        // The factory function must give back a unique reference:
-        if (result.ref_count() != 1)
-            throw type_error("__init__() factory function returned an object with multiple references");
-        // Guard against accidentally specifying a reference r.v. policy or similar:
-        if (!result_inst->owned)
-            throw type_error("__init__() factory function returned an unowned reference");
-
-        // Steal the instance internals:
-        dealloc<Class>(self);
-        std::swap(self->value, result_inst->value);
-        std::swap(self->weakrefs, result_inst->weakrefs);
-        if (type->tp_dictoffset != 0)
-            std::swap(*_PyObject_GetDictPtr((PyObject *) self), *_PyObject_GetDictPtr((PyObject *) result_inst));
-        // Now steal the holder
-        Class::init_holder((PyObject *) self, &result_inst->holder);
-        // Find the instance we just stole and update its PyObject from `result` to `self`
-        auto range = get_internals().registered_instances.equal_range(self->value);
-        for (auto it = range.first; it != range.second; ++it) {
-            if (type == Py_TYPE(it->second)) {
-                it->second = self;
-                break;
-            }
-        }
     }
 
     // return-by-value version 1: no alias or return not convertible to the alias:

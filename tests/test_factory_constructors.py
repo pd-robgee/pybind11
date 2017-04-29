@@ -17,17 +17,7 @@ def test_init_factory():
     z1 = TestFactory1(tag.unique_ptr, "hi!")
     assert z1.value == "hi!"
 
-    def get_test_factory_1(*args):
-        v = -23 + sum(args)
-        return TestFactory1(tag.pointer, v)
-    w1 = TestFactory1(get_test_factory_1)
-    assert w1.value == "100"
-
-    TestFactory1.set_ctor_fallback(get_test_factory_1)
-    v1 = TestFactory1()
-    assert v1.value == "-23"
-
-    assert ConstructorStats.detail_reg_inst() == n_inst + 5
+    assert ConstructorStats.detail_reg_inst() == n_inst + 3
 
     x2 = TestFactory2(tag.move)
     assert x2.value == "(empty2)"
@@ -36,12 +26,8 @@ def test_init_factory():
     z2 = TestFactory2(tag.unique_ptr, "hi again")
     assert z2.value == "hi again"
 
-    assert ConstructorStats.detail_reg_inst() == n_inst + 8
+    assert ConstructorStats.detail_reg_inst() == n_inst + 6
 
-    v3 = TestFactory3(tag.object, 8)  # lambda adds 1
-    assert v3.value == "9"
-    w3 = TestFactory3(tag.raw_object, 99)
-    assert w3.value == "99"
     x3 = TestFactory3(tag.shared_ptr)
     assert x3.value == "(empty3)"
     y3 = TestFactory3(tag.pointer, 42)
@@ -49,45 +35,29 @@ def test_init_factory():
     z3 = TestFactory3("bye")
     assert z3.value == "bye"
 
-    assert ConstructorStats.detail_reg_inst() == n_inst + 13
+    assert ConstructorStats.detail_reg_inst() == n_inst + 9
 
-    with pytest.raises(TypeError) as excinfo:
-        TestFactory3(tag.multiref, 21)
-    assert (str(excinfo.value) ==
-            "__init__() factory function returned an object with multiple references")
-    assert ConstructorStats.detail_reg_inst() == n_inst + 14  # +1 because the above leaks a ref
-    with pytest.raises(TypeError) as excinfo:
-        TestFactory3(tag.unowned, 24)
-    assert (str(excinfo.value) ==
-            "__init__() factory function returned an unowned reference")
-    assert ConstructorStats.detail_reg_inst() == n_inst + 14
     with pytest.raises(TypeError) as excinfo:
         TestFactory3(tag.null_ptr)
     assert (str(excinfo.value) ==
             "__init__() factory function returned a null pointer")
-    assert ConstructorStats.detail_reg_inst() == n_inst + 14
 
-    assert [i.alive() for i in cstats] == [5, 3, 7]
-    TestFactory3.cleanup_leaks()
-    assert ConstructorStats.detail_reg_inst() == n_inst + 13
-    assert [i.alive() for i in cstats] == [5, 3, 5]
-    del x1, y2, y3, z3, v1
-    assert [i.alive() for i in cstats] == [3, 2, 3]
-    assert ConstructorStats.detail_reg_inst() == n_inst + 8
-    del x2, x3, w1
-    assert [i.alive() for i in cstats] == [2, 1, 2]
+    assert [i.alive() for i in cstats] == [3, 3, 3]
+    assert ConstructorStats.detail_reg_inst() == n_inst + 9
+    del x1, y2, y3, z3
+    assert [i.alive() for i in cstats] == [2, 2, 1]
     assert ConstructorStats.detail_reg_inst() == n_inst + 5
+    del x2, x3
+    assert [i.alive() for i in cstats] == [2, 1, 0]
+    assert ConstructorStats.detail_reg_inst() == n_inst + 3
     del y1, z1, z2
-    assert [i.alive() for i in cstats] == [0, 0, 2]
-    assert ConstructorStats.detail_reg_inst() == n_inst + 2
-    del v3, w3
     assert [i.alive() for i in cstats] == [0, 0, 0]
     assert ConstructorStats.detail_reg_inst() == n_inst
 
     assert [i.values() for i in cstats] == [
-        ["3", "hi!", "100", "-23"],
+        ["3", "hi!"],
         ["7", "hi again"],
-        ["9", "99", "42", "bye", "21", "24"]
+        ["42", "bye"]
     ]
     assert [i.default_constructions for i in cstats] == [1, 1, 1]
 
