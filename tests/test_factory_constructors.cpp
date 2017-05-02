@@ -67,7 +67,6 @@ public:
     virtual ~TestFactory5() { print_destroyed(this); }
 };
 
-struct NinetyNine {};
 class TestFactory6 {
 protected:
     int value;
@@ -76,21 +75,42 @@ public:
     TestFactory6(int i) : value{i} { print_created(this, i); }
     TestFactory6(TestFactory6 &&f) { print_move_created(this); value = f.value; alias = f.alias; }
     TestFactory6(const TestFactory6 &f) { print_copy_created(this); value = f.value; alias = f.alias; }
-    // Implicit conversion not supported by alias:
-    TestFactory6(NinetyNine) : TestFactory6(99) {}
     virtual ~TestFactory6() { print_destroyed(this); }
     virtual int get() { return value; }
     bool has_alias() { return alias; }
 };
 class PyTF6 : public TestFactory6 {
 public:
+    // Special constructor that allows the factory to construct a PyTF6 from a TestFactory6 only
+    // when an alias is needed:
+    PyTF6(TestFactory6 &&base) : TestFactory6(std::move(base)) { alias = true; print_created(this, "move", value); }
     PyTF6(int i) : TestFactory6(i) { alias = true; print_created(this, i); }
-    // Allow implicit conversion from std::string:
-    PyTF6(std::string s) : TestFactory6((int) s.size()) { alias = true; print_created(this, s); }
     PyTF6(PyTF6 &&f) : TestFactory6(std::move(f)) { print_move_created(this); }
     PyTF6(const PyTF6 &f) : TestFactory6(f) { print_copy_created(this); }
+    PyTF6(std::string s) : TestFactory6((int) s.size()) { alias = true; print_created(this, s); }
     virtual ~PyTF6() { print_destroyed(this); }
     int get() override { PYBIND11_OVERLOAD(int, TestFactory6, get, /*no args*/); }
+};
+
+class TestFactory7 {
+protected:
+    int value;
+    bool alias = false;
+public:
+    TestFactory7(int i) : value{i} { print_created(this, i); }
+    TestFactory7(TestFactory7 &&f) { print_move_created(this); value = f.value; alias = f.alias; }
+    TestFactory7(const TestFactory7 &f) { print_copy_created(this); value = f.value; alias = f.alias; }
+    virtual ~TestFactory7() { print_destroyed(this); }
+    virtual int get() { return value; }
+    bool has_alias() { return alias; }
+};
+class PyTF7 : public TestFactory7 {
+public:
+    PyTF7(int i) : TestFactory7(i) { alias = true; print_created(this, i); }
+    PyTF7(PyTF7 &&f) : TestFactory7(std::move(f)) { print_move_created(this); }
+    PyTF7(const PyTF7 &f) : TestFactory7(f) { print_copy_created(this); }
+    virtual ~PyTF7() { print_destroyed(this); }
+    int get() override { PYBIND11_OVERLOAD(int, TestFactory7, get, /*no args*/); }
 };
 
 class TestFactoryHelper {
@@ -138,17 +158,18 @@ test_initializer factory_constructors([](py::module &m) {
     MAKE_TAG_TYPE(invalid_base);
     MAKE_TAG_TYPE(alias);
     MAKE_TAG_TYPE(unaliasable);
+    MAKE_TAG_TYPE(mixed);
 
     py::class_<TestFactory1>(m, "TestFactory1")
-        .def(py::init_factory([](pointer_tag, int v) { return TestFactoryHelper::construct1(v); }))
-        .def(py::init_factory([](unique_ptr_tag, std::string v) { return TestFactoryHelper::construct1(v); }))
-        .def(py::init_factory([](pointer_tag) { return TestFactoryHelper::construct1(); }))
+        .def(py::init([](pointer_tag, int v) { return TestFactoryHelper::construct1(v); }))
+        .def(py::init([](unique_ptr_tag, std::string v) { return TestFactoryHelper::construct1(v); }))
+        .def(py::init([](pointer_tag) { return TestFactoryHelper::construct1(); }))
         .def_readwrite("value", &TestFactory1::value)
         ;
     py::class_<TestFactory2>(m, "TestFactory2")
-        .def(py::init_factory([](pointer_tag, int v) { return TestFactoryHelper::construct2(v); }))
-        .def(py::init_factory([](unique_ptr_tag, std::string v) { return TestFactoryHelper::construct2(v); }))
-        .def(py::init_factory([](move_tag) { return TestFactoryHelper::construct2(); }))
+        .def(py::init([](pointer_tag, int v) { return TestFactoryHelper::construct2(v); }))
+        .def(py::init([](unique_ptr_tag, std::string v) { return TestFactoryHelper::construct2(v); }))
+        .def(py::init([](move_tag) { return TestFactoryHelper::construct2(); }))
         .def_readwrite("value", &TestFactory2::value)
         ;
     int c = 1;
@@ -156,36 +177,33 @@ test_initializer factory_constructors([](py::module &m) {
     auto c4a = [c](pointer_tag, TF4_tag, int a) { return new TestFactory4(a);};
 
     py::class_<TestFactory3, std::shared_ptr<TestFactory3>>(m, "TestFactory3")
-        .def(py::init_factory([](pointer_tag, int v) { return TestFactoryHelper::construct3(v); }))
-        .def(py::init_factory([](shared_ptr_tag) { return TestFactoryHelper::construct3(); }))
-        .def("__init__", [](TestFactory3 &self, std::string v) { new (&self) TestFactory3(v); }) // regular ctor
-        // wrong type returned (should trigger static_assert failure if uncommented):
-        //.def(py::init_factory([](double a, int b) { return TestFactoryHelper::construct2((int) (a + b)); }))
+        .def(py::init([](pointer_tag, int v) { return TestFactoryHelper::construct3(v); }))
+        .def(py::init([](shared_ptr_tag) { return TestFactoryHelper::construct3(); }))
+        .def("__init__", [](TestFactory3 &self, std::string v) { new (&self) TestFactory3(v); }) // placement-new ctor
 
         // factories returning a derived type:
-        .def(py::init_factory(c4a)) // derived ptr
-        .def(py::init_factory([](pointer_tag, TF5_tag, int a) { return new TestFactory5(a); }))
-        .def(py::init_factory([](pointer_tag, TF5_tag, int a) { return new TestFactory5(a); }))
+        .def(py::init(c4a)) // derived ptr
+        .def(py::init([](pointer_tag, TF5_tag, int a) { return new TestFactory5(a); }))
         // derived shared ptr:
-        .def(py::init_factory([](shared_ptr_tag, TF4_tag, int a) { return std::make_shared<TestFactory4>(a); }))
-        .def(py::init_factory([](shared_ptr_tag, TF5_tag, int a) { return std::make_shared<TestFactory5>(a); }))
+        .def(py::init([](shared_ptr_tag, TF4_tag, int a) { return std::make_shared<TestFactory4>(a); }))
+        .def(py::init([](shared_ptr_tag, TF5_tag, int a) { return std::make_shared<TestFactory5>(a); }))
 
         // Returns nullptr:
-        .def(py::init_factory([](null_ptr_tag) { return (TestFactory3 *) nullptr; }))
+        .def(py::init([](null_ptr_tag) { return (TestFactory3 *) nullptr; }))
 
         .def_readwrite("value", &TestFactory3::value)
         ;
     py::class_<TestFactory4, TestFactory3, std::shared_ptr<TestFactory4>>(m, "TestFactory4")
-        .def(py::init_factory(c4a)) // pointer
+        .def(py::init(c4a)) // pointer
         // Valid downcasting test:
-        .def(py::init_factory([](shared_ptr_tag, base_tag, int a) {
+        .def(py::init([](shared_ptr_tag, base_tag, int a) {
             return std::shared_ptr<TestFactory3>(new TestFactory4(a)); }))
-        .def(py::init_factory([](pointer_tag, base_tag, int a) {
+        .def(py::init([](pointer_tag, base_tag, int a) {
             return (TestFactory3 *) new TestFactory4(a); }))
         // Invalid downcasting test:
-        .def(py::init_factory([](shared_ptr_tag, invalid_base_tag, int a) {
+        .def(py::init([](shared_ptr_tag, invalid_base_tag, int a) {
             return std::shared_ptr<TestFactory3>(new TestFactory5(a)); }))
-        .def(py::init_factory([](pointer_tag, invalid_base_tag, int a) {
+        .def(py::init([](pointer_tag, invalid_base_tag, int a) {
             return (TestFactory3 *) new TestFactory5(a); }))
         ;
 
@@ -194,14 +212,12 @@ test_initializer factory_constructors([](py::module &m) {
 
     // Alias testing
     py::class_<TestFactory6, PyTF6>(m, "TestFactory6")
-        .def(py::init_factory([](int i) { return i; }))
-        .def(py::init_factory([](std::string s) { return s; }))
-        .def(py::init_factory([](base_tag, int i) { return TestFactory6(i); }))
-        .def(py::init_factory([](alias_tag, int i) { return PyTF6(i); }))
-        .def(py::init_factory([](alias_tag, pointer_tag, int i) { return new PyTF6(i); }))
-        .def(py::init_factory([](base_tag, pointer_tag, int i) { return new TestFactory6(i); }))
-        .def(py::init_factory([](base_tag, alias_tag, pointer_tag, int i) { return (TestFactory6 *) new PyTF6(i); }))
-        .def(py::init_factory([](unaliasable_tag) { return NinetyNine(); }))
+        .def(py::init([](base_tag, int i) { return TestFactory6(i); }))
+        .def(py::init([](alias_tag, int i) { return PyTF6(i); }))
+        .def(py::init([](alias_tag, std::string s) { return PyTF6(s); }))
+        .def(py::init([](alias_tag, pointer_tag, int i) { return new PyTF6(i); }))
+        .def(py::init([](base_tag, pointer_tag, int i) { return new TestFactory6(i); }))
+        .def(py::init([](base_tag, alias_tag, pointer_tag, int i) { return (TestFactory6 *) new PyTF6(i); }))
 
         .def("get", &TestFactory6::get)
         .def("has_alias", &TestFactory6::has_alias)
@@ -209,4 +225,55 @@ test_initializer factory_constructors([](py::module &m) {
         .def_static("get_cstats", &ConstructorStats::get<TestFactory6>, py::return_value_policy::reference)
         .def_static("get_alias_cstats", &ConstructorStats::get<PyTF6>, py::return_value_policy::reference)
         ;
+
+    // Separate alias constructor testing
+    py::class_<TestFactory7, PyTF7, std::shared_ptr<TestFactory7>>(m, "TestFactory7")
+        .def(py::init(
+            [](int i) { return TestFactory7(i); },
+            [](int i) { return PyTF7(i); }))
+        .def(py::init(
+            [](pointer_tag, int i) { return new TestFactory7(i); },
+            [](pointer_tag, int i) { return new PyTF7(i); }))
+        .def(py::init(
+            [](mixed_tag, int i) { return new TestFactory7(i); },
+            [](mixed_tag, int i) { return PyTF7(i); }))
+        .def(py::init(
+            [](mixed_tag, std::string s) { return TestFactory7((int) s.size()); },
+            [](mixed_tag, std::string s) { return new PyTF7((int) s.size()); }))
+        .def(py::init(
+            [](base_tag, pointer_tag, int i) { return new TestFactory7(i); },
+            [](base_tag, pointer_tag, int i) { return (TestFactory7 *) new PyTF7(i); }))
+        .def(py::init(
+            [](alias_tag, pointer_tag, int i) { return new PyTF7(i); },
+            [](alias_tag, pointer_tag, int i) { return new PyTF7(10*i); }))
+        .def(py::init(
+            [](shared_ptr_tag, base_tag, int i) { return std::make_shared<TestFactory7>(i); },
+            [](shared_ptr_tag, base_tag, int i) { auto *p = new PyTF7(i); return std::shared_ptr<TestFactory7>(p); }))
+        .def(py::init(
+            [](shared_ptr_tag, invalid_base_tag, int i) { return std::make_shared<TestFactory7>(i); },
+            [](shared_ptr_tag, invalid_base_tag, int i) { return std::make_shared<TestFactory7>(i); })) // <-- invalid alias factory
+
+        .def("get", &TestFactory7::get)
+        .def("has_alias", &TestFactory7::has_alias)
+
+        .def_static("get_cstats", &ConstructorStats::get<TestFactory7>, py::return_value_policy::reference)
+        .def_static("get_alias_cstats", &ConstructorStats::get<PyTF7>, py::return_value_policy::reference)
+        ;
+
+
+
+    // static_assert testing (the following def's should all fail with appropriate compilation errors):
+#if 0
+    struct BadF1Base {};
+    struct BadF1 : BadF1Base {};
+    struct PyBadF1 : BadF1 {};
+    py::class_<BadF1, PyBadF1, std::shared_ptr<BadF1>> bf1(m, "BadF1");
+    // wrapped factory function must return a compatible pointer, holder, or value
+    bf1.def(py::init([]() { return 3; }));
+    // incompatible factory function pointer return type
+    bf1.def(py::init([]() { static int three = 3; return &three; }));
+    // incompatible factory function std::shared_ptr<T> return type: cannot convert shared_ptr<T> to holder
+    // (non-polymorphic base)
+    bf1.def(py::init([]() { return std::shared_ptr<BadF1Base>(new BadF1()); }));
+#endif
 });

@@ -1163,7 +1163,7 @@ private:
         init_holder_helper(inst, (const holder_type *) holder_ptr, inst->value);
     }
 
-    template <typename, typename, typename...> friend struct detail::init_factory;
+    template <typename, typename, typename, typename, typename...> friend struct detail::init_factory;
 
     static void dealloc(PyObject *inst_) {
         instance_type *inst = (instance_type *) inst_;
@@ -1345,6 +1345,7 @@ NAMESPACE_END(detail)
 
 template <typename... Args> detail::init<Args...> init() { return detail::init<Args...>(); }
 template <typename... Args> detail::init_alias<Args...> init_alias() { return detail::init_alias<Args...>(); }
+// init(func) and init(func, func) factory constructors are in factory.h
 
 /// Makes a python iterator from a first and past-the-end C++ InputIterator.
 template <return_value_policy Policy = return_value_policy::reference_internal,
