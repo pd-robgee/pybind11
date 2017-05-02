@@ -107,7 +107,8 @@ def test_init_factory_casting():
     with pytest.raises(TypeError) as excinfo:
         TestFactory4(tag.shared_ptr, tag.invalid_base, -3)
     assert (str(excinfo.value) ==
-            "pybind11::init(): factory construction failed: base class shared_ptr is not a derived instance")
+            "pybind11::init(): factory construction failed: base class shared_ptr is not "
+            "a derived instance")
 
     assert [i.alive() for i in cstats] == [0, 0, 0]
     assert ConstructorStats.detail_reg_inst() == n_inst
