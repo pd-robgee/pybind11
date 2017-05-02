@@ -10,7 +10,7 @@
 #include "pybind11_tests.h"
 
 
-template <int N> class BreaksBase {};
+template <int N> class BreaksBase { public: virtual ~BreaksBase() = default; };
 template <int N> class BreaksTramp : public BreaksBase<N> {};
 // These should all compile just fine:
 typedef py::class_<BreaksBase<1>, std::unique_ptr<BreaksBase<1>>, BreaksTramp<1>> DoesntBreak1;
