@@ -537,9 +537,9 @@ public:
 
 template<typename Type>
 struct type_caster<Type, enable_if_t<is_eigen_sparse<Type>::value>> {
-    typedef typename Type::Scalar Scalar;
-    typedef typename std::remove_reference<decltype(*std::declval<Type>().outerIndexPtr())>::type StorageIndex;
-    typedef typename Type::Index Index;
+    using Scalar = typename Type::Scalar;
+    using StorageIndex = remove_reference_t<decltype(*std::declval<Type>().outerIndexPtr())>;
+    using Index = typename Type::Index;
     static constexpr bool rowMajor = Type::IsRowMajor;
 
     bool load(handle src, bool) {
