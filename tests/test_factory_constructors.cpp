@@ -121,7 +121,7 @@ public:
     // Holder:
     static std::unique_ptr<TestFactory1> construct1(int a) { return std::unique_ptr<TestFactory1>(new TestFactory1(a)); }
     // pointer again
-    static TestFactory1 *construct1(std::string a) { return new TestFactory1(a); }
+    static TestFactory1 *construct1_string(std::string a) { return new TestFactory1(a); }
 
     // Moveable type:
     // pointer:
@@ -161,8 +161,8 @@ test_initializer factory_constructors([](py::module &m) {
     MAKE_TAG_TYPE(mixed);
 
     py::class_<TestFactory1>(m, "TestFactory1")
-        .def(py::init([](pointer_tag, int v) { return TestFactoryHelper::construct1(v); }))
-        .def(py::init([](unique_ptr_tag, std::string v) { return TestFactoryHelper::construct1(v); }))
+        .def(py::init([](unique_ptr_tag, int v) { return TestFactoryHelper::construct1(v); }))
+        .def(py::init(&TestFactoryHelper::construct1_string)) // raw function pointer
         .def(py::init([](pointer_tag) { return TestFactoryHelper::construct1(); }))
         .def_readwrite("value", &TestFactory1::value)
         ;

@@ -293,8 +293,14 @@ template <typename CFunc, typename AFunc,
 init_factory<CFunc, CReturn, AFunc, AReturn, CArgs...> init_factory_decltype(
     CReturn (*)(CArgs...), AReturn (*)(AArgs...));
 
+template <typename Func> struct init_factory_extract {
+    using type = typename detail::remove_class<decltype(&std::remove_reference<Func>::type::operator())>::type *;
+};
+template <typename Return, typename... Args>
+struct init_factory_extract<Return (*)(Args...)> { using type = Return (*)(Args...); };
+
 template <typename... Func> using init_factory_t = decltype(init_factory_decltype<Func...>(
-    (typename detail::remove_class<decltype(&std::remove_reference<Func>::type::operator())>::type *) nullptr...));
+    (typename init_factory_extract<Func>::type) nullptr...));
 
 NAMESPACE_END(detail)
 

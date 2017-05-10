@@ -10,11 +10,11 @@ def test_init_factory_basic():
     cstats[0].alive()  # force gc
     n_inst = ConstructorStats.detail_reg_inst()
 
-    x1 = TestFactory1(tag.pointer, 3)
+    x1 = TestFactory1(tag.unique_ptr, 3)
     assert x1.value == "3"
     y1 = TestFactory1(tag.pointer)
     assert y1.value == "(empty)"
-    z1 = TestFactory1(tag.unique_ptr, "hi!")
+    z1 = TestFactory1("hi!")
     assert z1.value == "hi!"
 
     assert ConstructorStats.detail_reg_inst() == n_inst + 3
