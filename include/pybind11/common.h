@@ -503,6 +503,31 @@ template <typename T>
 struct is_input_iterator<T, void_t<decltype(*std::declval<T &>()), decltype(++std::declval<T &>())>>
     : std::true_type {};
 
+template <typename T> using is_function_pointer = bool_constant<
+    std::is_pointer<T>::value && std::is_function<typename std::remove_pointer<T>::type>::value>;
+
+// Extracts the function signature from a function, function pointer or lambda.
+template <typename F, typename SFINAE = void> struct function_signature {};
+template <typename F> struct function_signature<F, enable_if_t<std::is_function<remove_reference_t<F>>::value>>
+{ using type = remove_reference_t<F>; };
+template <typename F> struct function_signature<F, enable_if_t<is_function_pointer<remove_reference_t<F>>::value>>
+{ using type = typename std::remove_pointer<remove_reference_t<F>>::type; };
+template <typename F> struct function_signature<F, enable_if_t<
+    satisfies_none_of<remove_reference_t<F>, std::is_function, std::is_pointer, std::is_member_pointer>::value>>
+{ using type = typename detail::remove_class<decltype(&remove_reference_t<F>::operator())>::type; };
+
+template <typename F> using function_signature_t = typename function_signature<F>::type;
+
+/// Returns true if the type looks like a lambda: that is, isn't a function, pointer or member
+/// pointer.  Note that this can catch all sorts of other things, too; this is intended to be used
+/// in a place where passing a lambda makes sense.
+template <typename T, typename = void> struct is_lambda : std::false_type {};
+template <typename T>
+struct is_lambda<T, enable_if_t<
+    satisfies_none_of<remove_reference_t<T>,
+        std::is_function, std::is_pointer, std::is_member_pointer
+    >::value>> : std::true_type {};
+
 /// Ignore that a variable is unused in compiler warnings
 inline void ignore_unused(const int *) { }
 

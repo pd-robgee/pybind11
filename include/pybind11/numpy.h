@@ -1415,10 +1415,10 @@ vectorize(Return (*f) (Args ...)) {
     return vectorize<Return (*) (Args ...), Return, Args...>(f, f);
 }
 
-template <typename Func, typename FuncType = typename detail::remove_class<decltype(&std::remove_reference<Func>::type::operator())>::type>
+template <typename Func, typename = detail::enable_if_t<detail::is_lambda<Func>::value>>
 auto vectorize(Func &&f) -> decltype(
-        vectorize(std::forward<Func>(f), (FuncType *) nullptr)) {
-    return vectorize(std::forward<Func>(f), (FuncType *) nullptr);
+        vectorize(std::forward<Func>(f), (detail::function_signature_t<Func> *) nullptr)) {
+    return vectorize(std::forward<Func>(f), (detail::function_signature_t<Func> *) nullptr);
 }
 
 NAMESPACE_END(pybind11)
