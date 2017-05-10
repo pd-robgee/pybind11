@@ -276,9 +276,15 @@ private:
     AFuncType alias_factory;
 };
 
+template <typename Func> using init_factory_functype =
+    conditional_t<std::is_function<remove_reference_t<Func>>::value, remove_reference_t<Func> *,
+    conditional_t<is_function_pointer<remove_reference_t<Func>>::value, remove_reference_t<Func>,
+    Func>>;
+
 // Helper definition to infer the detail::init_factory template type from a callable object
 template <typename Func, typename Return, typename... Args>
-init_factory<Func, Return, void, void, Args...> init_factory_decltype(Return (*)(Args...));
+init_factory<init_factory_functype<Func>, Return, void, void, Args...> init_factory_decltype(Return (*)(Args...));
+
 template <typename Return1, typename Return2, typename... Args1, typename... Args2>
 inline constexpr bool init_factory_require_matching_arguments(Return1 (*)(Args1...), Return2 (*)(Args2...)) {
     static_assert(sizeof...(Args1) == sizeof...(Args2),
@@ -287,24 +293,15 @@ inline constexpr bool init_factory_require_matching_arguments(Return1 (*)(Args1.
         "pybind11::init(class_factory, alias_factory): class and alias factories must have identical argument signatures");
     return true;
 }
+
 template <typename CFunc, typename AFunc,
           typename CReturn, typename... CArgs, typename AReturn, typename... AArgs,
           bool = init_factory_require_matching_arguments((CReturn (*)(CArgs...)) nullptr, (AReturn (*)(AArgs...)) nullptr)>
-init_factory<CFunc, CReturn, AFunc, AReturn, CArgs...> init_factory_decltype(
+init_factory<init_factory_functype<CFunc>, CReturn, init_factory_functype<AFunc>, AReturn, CArgs...> init_factory_decltype(
     CReturn (*)(CArgs...), AReturn (*)(AArgs...));
 
-template <typename T, typename SFINAE = void>
-struct init_factory_extract { using type = T; };
-
-template <typename Func> struct init_factory_extract<Func, enable_if_t<satisfies_none_of<
-    typename std::remove_reference<Func>::type,
-    std::is_function, std::is_pointer, std::is_member_pointer
->::value>> {
-    using type = typename detail::remove_class<decltype(&std::remove_reference<Func>::type::operator())>::type *;
-};
-
 template <typename... Func> using init_factory_t = decltype(init_factory_decltype<Func...>(
-    (typename init_factory_extract<Func>::type) nullptr...));
+    (function_signature_t<Func> *) nullptr...));
 
 NAMESPACE_END(detail)
 
@@ -313,7 +310,7 @@ template <typename Func>
 detail::init_factory_t<Func> init(Func &&f) { return {std::forward<Func>(f)}; }
 
 /// Dual-argument factory function: the first function is called when no alias is needed, the second
-/// when an alias is needed (i.e. due to python-side inheritance).
+/// when an alias is needed (i.e. due to python-side inheritance).  Arguments must be identical.
 template <typename CFunc, typename AFunc>
 detail::init_factory_t<CFunc, AFunc> init(CFunc &&c, AFunc &&a) {
     return {std::forward<CFunc>(c), std::forward<AFunc>(a)};
