@@ -293,11 +293,15 @@ template <typename CFunc, typename AFunc,
 init_factory<CFunc, CReturn, AFunc, AReturn, CArgs...> init_factory_decltype(
     CReturn (*)(CArgs...), AReturn (*)(AArgs...));
 
-template <typename Func> struct init_factory_extract {
+template <typename T, typename SFINAE = void>
+struct init_factory_extract { using type = T; };
+
+template <typename Func> struct init_factory_extract<Func, enable_if_t<satisfies_none_of<
+    typename std::remove_reference<Func>::type,
+    std::is_function, std::is_pointer, std::is_member_pointer
+>::value>> {
     using type = typename detail::remove_class<decltype(&std::remove_reference<Func>::type::operator())>::type *;
 };
-template <typename Return, typename... Args>
-struct init_factory_extract<Return (*)(Args...)> { using type = Return (*)(Args...); };
 
 template <typename... Func> using init_factory_t = decltype(init_factory_decltype<Func...>(
     (typename init_factory_extract<Func>::type) nullptr...));
