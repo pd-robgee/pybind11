@@ -35,8 +35,7 @@ inline static void init_factory_no_nullptr(void *ptr) {
 template <typename CFunc, typename CReturn, typename AFuncIn, typename AReturn, typename... Args> struct init_factory {
 private:
     using CFuncType = typename std::remove_reference<CFunc>::type;
-    static constexpr bool have_alias_factory = !std::is_void<AFuncIn>::value;
-    using AFunc = conditional_t<have_alias_factory, AFuncIn, void_type>;
+    using AFunc = conditional_t<std::is_void<AFuncIn>::value, void_type, AFuncIn>;
     using AFuncType = typename std::remove_reference<AFunc>::type;
 
     template <typename Class> using Cpp = typename Class::type;
@@ -57,10 +56,10 @@ public:
 
     // Add __init__ definition for a class that has no alias or has no separate alias factory
     template <typename Class, typename... Extra,
-              enable_if_t<!Class::has_alias || !have_alias_factory, int> = 0>
+              enable_if_t<!Class::has_alias || std::is_void<AFuncIn>::value, int> = 0>
     void execute(Class &cl, const Extra&... extra) && {
         auto *cl_type = (PyTypeObject *) cl.ptr();
-        #if defined(PYBIND11_CPP14) || defined(_MSC_VER)
+        #if defined(PYBIND11_CPP14)
         cl.def("__init__", [cl_type, func = std::move(class_factory)]
         #else
         CFuncType func(std::move(class_factory));
@@ -74,10 +73,10 @@ public:
 
     // Add __init__ definition for a class with an alias *and* distinct alias factory:
     template <typename Class, typename... Extra,
-              enable_if_t<Class::has_alias && have_alias_factory, int> = 0>
+              enable_if_t<Class::has_alias && !std::is_void<AFuncIn>::value, int> = 0>
     void execute(Class &cl, const Extra&... extra) && {
         auto *cl_type = (PyTypeObject *) cl.ptr();
-        #if defined(PYBIND11_CPP14) || defined(_MSC_VER)
+        #if defined(PYBIND11_CPP14)
         cl.def("__init__", [cl_type, class_func = std::move(class_factory), alias_func = std::move(alias_factory)]
         #else
         CFuncType class_func(std::move(class_factory));
