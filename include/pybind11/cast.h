@@ -380,10 +380,14 @@ PYBIND11_NOINLINE inline void instance::allocate_layout() {
             space += tinfo->holder_size_in_ptrs;
         }
 
-        // Allocate space for flags, values, and holders:
+        // Allocate space for flags, values, and holders; initialize the space to 0 (flags and
+        // values need to be 0, and it doesn't hurt the holders)
+#if PY_VERSION_HEX >= 0x03050000
+        values_and_holders = (void **) PyMem_Calloc(space, sizeof(void *));
+#else
         values_and_holders = (void **) PyMem_New(void *, space);
-        // flags and values need to start out equal to 0; it doesn't hurt the holders
         std::memset(values_and_holders, 0, space * sizeof(void *));
+#endif
     }
     owned = true;
 }
