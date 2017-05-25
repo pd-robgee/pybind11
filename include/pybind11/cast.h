@@ -249,8 +249,6 @@ struct value_and_holder {
     size_t vpos, index;
     detail::type_info *type;
 
-    static constexpr size_t bits_per_ptr = 8 * sizeof(void *);
-
     value_and_holder(instance *i, detail::type_info *type, size_t vpos, size_t index)
         : inst{i}, vpos{vpos}, index{index}, type{type} {}
 
@@ -269,15 +267,13 @@ struct value_and_holder {
     }
     bool holder_constructed() const {
         if (inst->simple_layout) return inst->simple_holder_constructed;
-        return reinterpret_cast<std::uintptr_t>(inst->values_and_holders[index / bits_per_ptr])
-            & (std::uintptr_t(1) << (index % bits_per_ptr));
+        return reinterpret_cast<unsigned char *>(inst->values_and_holders)[index];
     }
     void set_holder_constructed() {
         if (inst->simple_layout)
             inst->simple_holder_constructed = true;
         else
-            reinterpret_cast<std::uintptr_t &>(inst->values_and_holders[index / bits_per_ptr])
-                |= (std::uintptr_t(1) << (index % bits_per_ptr));
+            reinterpret_cast<unsigned char *>(inst->values_and_holders)[index] = 1;
     }
 };
 
@@ -298,7 +294,10 @@ public:
         friend struct values_and_holders;
         explicit iterator(instance *inst)
             : inst{inst}, typeit{inst->all_type_info().begin()}, end{inst->all_type_info().size()},
-            curr(inst, end > 0 ? *typeit : nullptr, end / sizeof(void *) + (end % sizeof(void *) != 0), 0)
+            curr(inst /* instance */,
+                 end > 0 ? *typeit : nullptr /* type info */,
+                 1 + ((end - 1) >> log2(sizeof(void *))), /* vpos - the first value is after the holder constructed flags (non-simple type only) */
+                 0 /* index */)
         {}
         // Past-the-end iterator:
         iterator(instance *inst, bool) : inst{inst}, typeit{inst->all_type_info().end()}, end{inst->all_type_info().size()},
@@ -371,11 +370,10 @@ PYBIND11_NOINLINE inline void instance::allocate_layout() {
     }
     else { // multiple base types or a too-large holder
         // Allocate space to hold: [bb...][v1*][h1][v2*][h2]... where [vN*] is a value pointer, [hN]
-        // is the (uninitialized) holder instance for value N, and [bb...] is a bitfield that tracks
-        // whether each associated holder has been initialized.  Each [block] is an integer multiple
-        // of sizeof(void *) (padded if necessary).
-        const size_t n_flag_ptrs = n_types / value_and_holder::bits_per_ptr +
-                                  (n_types % value_and_holder::bits_per_ptr != 0);
+        // is the (uninitialized) holder instance for value N, and [bb...] is a set of bool values
+        // that tracks whether each associated holder has been initialized.  Each [block] is padded,
+        // if necessary, to an integer multiple of sizeof(void *).
+        const size_t n_flag_ptrs = 1 + ((n_types - 1) >> log2(sizeof(void *)));
         size_t space = n_flag_ptrs;
         for (auto tinfo : all_type_info()) {
             space += 1;
