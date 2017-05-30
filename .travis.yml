@@ -152,7 +152,7 @@ install:
     $SCRIPT_RUN_PREFIX sh -c "for s in 0 15; do sleep \$s; \
       apt-get -qy --no-install-recommends $APT_GET_EXTRA install \
         $PY_DEBUG python$PY-dev python$PY-pytest python$PY-scipy \
-        libeigen3-dev cmake make ${COMPILER_PACKAGES} && break; done"
+        libeigen3-dev catch cmake make ${COMPILER_PACKAGES} && break; done"
   else
 
     if [ "$CLANG" = "4.0" ]; then
@@ -185,6 +185,7 @@ install:
     wget -q -O eigen.tar.gz https://bitbucket.org/eigen/eigen/get/3.3.3.tar.gz
     tar xzf eigen.tar.gz
     export CMAKE_INCLUDE_PATH="${CMAKE_INCLUDE_PATH:+:}$PWD/eigen-eigen-67e894c6cd8f"
+    CMAKE_EXTRA_ARGS="${CMAKE_EXTRA_ARGS} -DDOWNLOAD_CATCH=ON"
   fi
   set +e
 script:
@@ -192,7 +193,6 @@ script:
     -DPYBIND11_PYTHON_VERSION=$PYTHON
     -DPYBIND11_CPP_STANDARD=$CPP
     -DPYBIND11_WERROR=${WERROR:-ON}
-    -DDOWNLOAD_CATCH=ON
 - $SCRIPT_RUN_PREFIX make pytest -j 2
 - $SCRIPT_RUN_PREFIX make cpptest -j 2
 - $SCRIPT_RUN_PREFIX make test_cmake_build
