@@ -99,6 +99,124 @@ PYBIND11_NOINLINE inline internals &get_internals() {
     return *internals_ptr;
 }
 
+struct value_and_holder {
+    instance *inst;
+    size_t index;
+    void **tvh;
+
+    value_and_holder(instance *i, size_t vpos, size_t index) :
+        inst{i}, index{index},
+        tvh{inst->simple_layout ? inst->type_value_holder : &inst->nonsimple.types_values_holders[vpos]}
+    {}
+
+    // Used for past-the-end iterator
+    value_and_holder(size_t index) : index{index} {}
+
+    // Returns the detail::type_info* for this value
+    type_info *typeinfo() const {
+        return reinterpret_cast<type_info *>(tvh[0]);
+    }
+    // Returns the value pointer reference cast into V &
+    template <typename V = void> V *&value_ptr() const {
+        return reinterpret_cast<V *&>(tvh[1]);
+    }
+    // True if this `value_and_holder` has a non-null value pointer
+    operator bool() const { return value_ptr(); }
+
+    // Returns the holder reference
+    template <typename H> H &holder() const {
+        return reinterpret_cast<H &>(tvh[2]);
+    }
+    // Returns true if the holder for this value ptr has been constructed
+    bool holder_constructed() const {
+        if (inst->simple_layout) return inst->simple_holder_constructed;
+        return reinterpret_cast<unsigned char *>(inst->nonsimple.types_values_holders)[index];
+    }
+    // Sets the flag indicating that the holder for this value ptr has been constructed
+    void set_holder_constructed() {
+        if (inst->simple_layout)
+            inst->simple_holder_constructed = true;
+        else
+            reinterpret_cast<unsigned char *>(inst->nonsimple.types_values_holders)[index] = 1;
+    }
+};
+
+// Container for accessing and iterating over an instance's values/holders
+struct values_and_holders {
+private:
+    instance *inst;
+    size_t count{inst->simple_layout ? 1 : inst->nonsimple.count};
+
+public:
+    values_and_holders(instance *inst) : inst{inst} {}
+
+    struct iterator {
+    private:
+        instance *inst;
+        size_t end;
+        value_and_holder curr;
+        friend struct values_and_holders;
+        iterator(instance *inst, size_t end)
+            : inst{inst}, end{end},
+            curr(inst /* instance */,
+                 /* vpos: (non-simple types only): the first [t*][v*][h] comes after the holder constructed flags */
+                 size_in_ptrs(end),
+                 0 /* index */)
+        {}
+        // Past-the-end iterator:
+        iterator(size_t end) : end{end}, curr(end) {}
+    public:
+        bool operator==(const iterator &other) { return curr.index == other.curr.index; }
+        bool operator!=(const iterator &other) { return curr.index != other.curr.index; }
+        iterator &operator++() {
+            if (!inst->simple_layout)
+                curr.tvh += 2 + curr.typeinfo()->holder_size_in_ptrs;
+            ++curr.index;
+            return *this;
+        }
+        value_and_holder &operator*() { return curr; }
+        value_and_holder *operator->() { return &curr; }
+    };
+
+    iterator begin() { return iterator(inst, count); }
+    iterator end() { return iterator(count); }
+
+    iterator find(const type_info *find_type) {
+        auto it = begin(), endit = end();
+        while (it != endit && it->typeinfo() != find_type) ++it;
+        return it;
+    }
+
+    value_and_holder front() { return *begin(); }
+
+    size_t size() { return count; }
+};
+
+/**
+ * Extracts C++ value and holder pointer references from an instance (which may contain multiple
+ * values/holders for python-side multiple inheritance) that match the given type.  Throws an error
+ * if the given type (or ValueType, if omitted) is not a pybind11 base of the given instance.
+ *
+ * The returned object should be short-lived: in particular, it must not outlive the called-upon
+ * instance.
+ */
+PYBIND11_NOINLINE inline value_and_holder instance::get_value_and_holder(const type_info *find_type) {
+    detail::values_and_holders vhs(this);
+    auto it = vhs.find(find_type);
+    if (it != vhs.end())
+        return std::move(*it);
+
+#if defined(NDEBUG)
+    pybind11_fail("pybind11::detail::instance::get_value_and_holder: "
+            "type is not a pybind11 base of the given instance "
+            "(compile in debug mode for type details)");
+#else
+    pybind11_fail("pybind11::detail::instance::get_value_and_holder: `" +
+            std::string(find_type->type->tp_name) + "' is not a pybind11 base of the given `" +
+            std::string(Py_TYPE(this)->tp_name) + "' instance");
+#endif
+}
+
 /**
  * Class that handles extracting pybind11-registered bases from a python base class.  For a class
  * that doesn't use python-side multiple inheritance, this will be a single class; if the class has
@@ -141,10 +259,16 @@ struct all_type_info {
 
     // Takes an existing, allocated instance; copies the cached type info from it
     explicit all_type_info(instance *inst) {
-        if (inst->simple_layout)
-            typeinfo = reinterpret_cast<type_info *>(inst->typeinfo);
-        else
-            all = *reinterpret_cast<decltype(all) *>(inst->typeinfo);
+        values_and_holders vh(inst);
+        if (vh.size() > 1) {
+            all.reserve(vh.size());
+            for (auto &v_h : vh) {
+                all.push_back(v_h.typeinfo());
+            }
+        }
+        else {
+            typeinfo = vh.front().typeinfo();
+        }
     }
 
     struct iterator {
@@ -253,125 +377,8 @@ PYBIND11_NOINLINE inline detail::type_info *get_type_info(const std::type_info &
 }
 
 PYBIND11_NOINLINE inline handle get_type_handle(const std::type_info &tp, bool throw_if_missing) {
-    detail::type_info *type_info = get_type_info(tp, throw_if_missing);
+    auto *type_info = get_type_info(tp, throw_if_missing);
     return handle(type_info ? ((PyObject *) type_info->type) : nullptr);
-}
-
-struct value_and_holder {
-    instance *inst;
-    size_t index;
-    detail::type_info *type;
-    void **vh;
-
-    value_and_holder(instance *i, detail::type_info *type, size_t vpos, size_t index) :
-        inst{i}, index{index}, type{type},
-        vh{inst->simple_layout ? inst->simple_value_holder : &inst->values_and_holders[vpos]}
-    {}
-
-    // Used for past-the-end iterator
-    value_and_holder(size_t index) : index{index} {}
-
-    template <typename V = void> V *&value_ptr() const {
-        return reinterpret_cast<V *&>(vh[0]);
-    }
-    // True if this `value_and_holder` has a non-null value pointer
-    operator bool() const { return value_ptr(); }
-
-    template <typename H> H &holder() const {
-        return reinterpret_cast<H &>(vh[1]);
-    }
-    bool holder_constructed() const {
-        if (inst->simple_layout) return inst->simple_holder_constructed;
-        return reinterpret_cast<unsigned char *>(inst->values_and_holders)[index];
-    }
-    void set_holder_constructed() {
-        if (inst->simple_layout)
-            inst->simple_holder_constructed = true;
-        else
-            reinterpret_cast<unsigned char *>(inst->values_and_holders)[index] = 1;
-    }
-};
-
-// Container for accessing and iterating over an instance's values/holders
-struct values_and_holders {
-private:
-    instance *inst;
-    all_type_info tinfo;
-
-public:
-    values_and_holders(instance *inst) : inst{inst}, tinfo(inst) {}
-
-    struct iterator {
-    private:
-        instance *inst;
-        all_type_info::iterator typeit;
-        size_t end;
-        value_and_holder curr;
-        friend struct values_and_holders;
-        iterator(instance *inst, const all_type_info &tinfo)
-            : inst{inst}, typeit{tinfo.begin()}, end{tinfo.size()},
-            curr(inst /* instance */,
-                 end > 0 ? *typeit : nullptr /* type info */,
-                 /* vpos: (non-simple types only: the first vptr comes after the holder constructed flags */
-                 size_in_ptrs(end),
-                 0 /* index */)
-        {}
-        // Past-the-end iterator:
-        iterator(size_t end) : end{end}, curr(end) {}
-    public:
-        bool operator==(const iterator &other) { return curr.index == other.curr.index; }
-        bool operator!=(const iterator &other) { return curr.index != other.curr.index; }
-        iterator &operator++() {
-            if (!inst->simple_layout) {
-                curr.vh += 1 + typeit->holder_size_in_ptrs;
-                ++typeit;
-                curr.type = curr.index < end ? *typeit : nullptr;
-            }
-            ++curr.index;
-            return *this;
-        }
-        value_and_holder &operator*() { return curr; }
-        value_and_holder *operator->() { return &curr; }
-        type_info *type() { return *typeit; }
-    };
-
-    iterator begin() { return iterator(inst, tinfo); }
-    iterator end() { return iterator(tinfo.size()); }
-
-    iterator find(const type_info *find_type) {
-        auto it = begin(), endit = end();
-        while (it != endit && it.type() != find_type) ++it;
-        return it;
-    }
-
-    value_and_holder front() { return *begin(); }
-
-    size_t size() { return tinfo.size(); }
-};
-
-/**
- * Extracts C++ value and holder pointer references from an instance (which may contain multiple
- * values/holders for python-side multiple inheritance) that match the given type.  Throws an error
- * if the given type (or ValueType, if omitted) is not a pybind11 base of the given instance.
- *
- * The returned object should be short-lived: in particular, it must not outlive the called-upon
- * instance.
- */
-PYBIND11_NOINLINE inline value_and_holder instance::get_value_and_holder(const type_info *find_type) {
-    detail::values_and_holders vhs(this);
-    auto it = vhs.find(find_type);
-    if (it != vhs.end())
-        return *it;
-
-#if defined(NDEBUG)
-    pybind11_fail("pybind11::detail::instance::get_value_and_holder: "
-            "type is not a pybind11 base of the given instance "
-            "(compile in debug mode for type details)");
-#else
-    pybind11_fail("pybind11::detail::instance::get_value_and_holder: `" +
-            std::string(find_type->type->tp_name) + "' is not a pybind11 base of the given `" +
-            std::string(Py_TYPE(this)->tp_name) + "' instance");
-#endif
 }
 
 PYBIND11_NOINLINE inline void instance::allocate_layout() {
@@ -387,9 +394,9 @@ PYBIND11_NOINLINE inline void instance::allocate_layout() {
 
     // Simple path: no python-side multiple inheritance, and a small-enough holder
     if (simple_layout) {
-        simple_value_holder[0] = nullptr;
+        type_value_holder[0] = tinfo.front();
+        type_value_holder[1] = nullptr;
         simple_holder_constructed = false;
-        typeinfo = tinfo.front();
     }
     else { // multiple base types or a too-large holder
         // Allocate space to hold: [TIV][bb...][v1*][h1][v2*][h2]... where [vN*] is a value pointer,
@@ -397,31 +404,39 @@ PYBIND11_NOINLINE inline void instance::allocate_layout() {
         // values that tracks whether each associated holder has been initialized, and TIV is a
         // vector of type_infos.  Each [block] is padded, if necessary, to an integer multiple of
         // sizeof(void *).
-        size_t space = size_in_ptrs(n_types);
+        const size_t flags_size = size_in_ptrs(n_types);
+        size_t space = flags_size;
         for (auto t : tinfo) {
-            space += 1; // value pointer
+            space += 2; // type_info* and value pointer
             space += t->holder_size_in_ptrs; // holder instance
         }
 
-        // Allocate space for types, flags, values, and holders, and initialize it to 0 (flags and
+        nonsimple.count = n_types;
+        // Allocate space for flags, types, values, and holders, and initialize it to 0 (flags and
         // values, in particular, need to be 0)
 #if PY_VERSION_HEX >= 0x03050000
-        values_and_holders = (void **) PyMem_Calloc(space, sizeof(void *));
+        nonsimple.types_values_holders = (void **) PyMem_Calloc(space, sizeof(void *));
 #else
-        values_and_holders = (void **) PyMem_New(void *, space);
-        std::memset(values_and_holders, 0, space * sizeof(void *));
+        nonsimple.types_values_holders = (void **) PyMem_New(void *, space);
+        std::memset(nonsimple.types_values_holders, 0, space * sizeof(void *));
 #endif
-        typeinfo = new decltype(tinfo.all)(std::move(tinfo.all));
+
+        // Record the instance's derived pybind types:
+        size_t pos = flags_size;
+        for (auto t : tinfo) {
+            nonsimple.types_values_holders[pos] = t;
+            pos += 2 + t->holder_size_in_ptrs;
+        }
     }
     owned = true;
 }
 
 PYBIND11_NOINLINE inline void instance::deallocate_layout() {
-    if (!simple_layout) {
-        delete static_cast<decltype(all_type_info::all) *>(typeinfo);
-        PyMem_Free(values_and_holders);
-    }
+    if (!simple_layout)
+        PyMem_Free(nonsimple.types_values_holders);
 }
+
+
 
 PYBIND11_NOINLINE inline bool isinstance_generic(handle obj, const std::type_info &tp) {
     handle type = detail::get_type_handle(tp, false);
@@ -482,8 +497,8 @@ PYBIND11_NOINLINE inline handle get_object_handle(const void *ptr, const detail:
     auto &instances = get_internals().registered_instances;
     auto range = instances.equal_range(ptr);
     for (auto it = range.first; it != range.second; ++it) {
-        for (auto vh : values_and_holders(it->second)) {
-            if (vh.type == type)
+        for (auto &vh : values_and_holders(it->second)) {
+            if (vh.typeinfo() == type)
                 return handle((PyObject *) it->second);
         }
     }

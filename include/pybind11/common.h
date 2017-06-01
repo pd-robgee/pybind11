@@ -322,14 +322,12 @@ struct instance {
     PyObject_HEAD
     /// Storage for pointers and holder; see simple_layout, below, for a description
     union {
-        void *simple_value_holder[1 + instance_simple_holder_in_ptrs()];
-        void **values_and_holders;
+        void *type_value_holder[2 + instance_simple_holder_in_ptrs()];
+        struct {
+            size_t count;
+            void **types_values_holders;
+        } nonsimple;
     };
-    /// For a simple_layout type, this is the detail::type_info associated with the instance.  For a
-    /// complex type, this is a pointer to std::vector holding all pybind base types.  This is
-    /// cached here so that we don't have to rescan the inheritance tree for a given instance each
-    /// time it is needed.
-    void *typeinfo;
     /// Weak references (needed for keep alive):
     PyObject *weakrefs;
     /// If true, the pointer is owned which means we're free to manage it with a holder.
@@ -337,23 +335,28 @@ struct instance {
     /**
      * An instance has two possible value/holder layouts.
      *
-     * Simple layout (when this flag is true), means the `simple_value_holder` is set with a pointer
-     * and the holder object governing that pointer, i.e. [val1*][holder].  This layout is applied
-     * whenever there is no python-side multiple inheritance of bound C++ types *and* the type's
-     * holder will fit in the default space (which is large enough to hold either a std::unique_ptr
-     * or std::shared_ptr).
+     * Simple layout (when this flag is true), means the `type_value_holder` is set with a type_info
+     * *, value *, and holder object governing that pointer, i.e. [type1*][val1*][holder].  This
+     * layout is applied whenever there is no python-side multiple inheritance of bound C++ types
+     * *and* the type's holder will fit in the default space (which is large enough to hold either a
+     * std::unique_ptr or std::shared_ptr).
      *
      * Non-simple layout applies when using custom holders that require more space than `shared_ptr`
      * (which is typically the size of two pointers), or when multiple inheritance is used on the
      * python side.  Non-simple layout allocates the required amount of memory to have multiple
-     * bound C++ classes as parents.  Under this layout, `values_and_holders` is set to a pointer to
-     * allocated space of the required space to hold a holder-constructed bitset followed by a
-     * sequence of value pointers and holders, i.e. [bbb...][val1*][holder1][val2*][holder2]...
+     * bound C++ classes with holders of arbitrary sizes as parents.  Under this layout,
+     * `count` specifies the number of values stored and `types_values_holders` is set to a pointer
+     * to allocated space of the required space to hold a holder-constructed bitset followed by a
+     * sequence of type_info pointers, value pointers and holders, i.e.
+     *
+     *     [bbb...][type1*][val1*][holder1][type2*][val2*][holder2]...
+     *
      * where each [block] is rounded up to a multiple of `sizeof(void *)`.
      */
     bool simple_layout : 1;
+
     /// For simple layout, tracks whether the holder has been constructed
-    unsigned char simple_holder_constructed;
+    bool simple_holder_constructed : 1;
 
     /// Initializes all of the above type/values/holders data
     void allocate_layout();

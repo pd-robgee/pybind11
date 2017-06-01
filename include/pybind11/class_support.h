@@ -247,12 +247,16 @@ inline PyObject *make_new_instance(PyTypeObject *type, bool allocate_value /*= t
     inst->allocate_layout();
 
     inst->owned = true;
-    // Allocate (if requested) the value pointers; otherwise leave them as nullptr
-    if (allocate_value) {
-        for (auto &v_h : values_and_holders(inst)) {
-            void *&vptr = v_h.value_ptr();
-            vptr = v_h.type->operator_new(v_h.type->type_size);
-            register_instance(inst, vptr, v_h.type);
+    // Allocate (if request) the value pointers; otherwise initialize them to nullptr
+    for (auto &v_h : values_and_holders(inst)) {
+        void *&vptr = v_h.value_ptr();
+        if (allocate_value) {
+            auto *tinfo = v_h.typeinfo();
+            vptr = tinfo->operator_new(tinfo->type_size);
+            register_instance(inst, vptr, tinfo);
+        }
+        else {
+            vptr = nullptr;
         }
     }
 
@@ -289,9 +293,9 @@ inline void clear_instance(PyObject *self) {
     for (auto &v_h : values_and_holders(instance)) {
         if (v_h) {
             if (instance->owned || v_h.holder_constructed())
-                v_h.type->dealloc(v_h);
+                v_h.typeinfo()->dealloc(v_h);
 
-            if (!deregister_instance(instance, v_h.value_ptr(), v_h.type))
+            if (!deregister_instance(instance, v_h.value_ptr(), v_h.typeinfo()))
                 pybind11_fail("pybind11_object_dealloc(): Tried to deallocate unregistered instance!");
         }
     }
