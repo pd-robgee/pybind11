@@ -820,7 +820,7 @@ protected:
         tinfo->cpptype = rec.type;
         tinfo->type_size = rec.type_size;
         tinfo->operator_new = rec.operator_new;
-        tinfo->holder_size_in_ptrs = rec.holder_size / sizeof(void *) + (rec.holder_size % sizeof(void *) != 0);
+        tinfo->holder_size_in_ptrs = size_in_ptrs(rec.holder_size);
         tinfo->init_holder = rec.init_holder;
         tinfo->dealloc = rec.dealloc;
         tinfo->simple_type = true;

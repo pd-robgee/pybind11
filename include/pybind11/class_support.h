@@ -246,19 +246,13 @@ inline PyObject *make_new_instance(PyTypeObject *type, bool allocate_value /*= t
     // Allocate the value/holder internals:
     inst->allocate_layout();
 
-    if (inst->all_type_info().size() == 0)
-        pybind11_fail("pybind11_object_new failure: new instance has no pybind11-registered base types");
-
     inst->owned = true;
-    // Allocate (if request) the value pointers; otherwise initialize them to nullptr
-    for (auto &v_h : values_and_holders(inst)) {
-        void *&vptr = v_h.value_ptr();
-        if (allocate_value) {
+    // Allocate (if requested) the value pointers; otherwise leave them as nullptr
+    if (allocate_value) {
+        for (auto &v_h : values_and_holders(inst)) {
+            void *&vptr = v_h.value_ptr();
             vptr = v_h.type->operator_new(v_h.type->type_size);
             register_instance(inst, vptr, v_h.type);
-        }
-        else {
-            vptr = nullptr;
         }
     }
 

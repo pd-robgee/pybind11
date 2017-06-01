@@ -99,13 +99,21 @@ PYBIND11_NOINLINE inline internals &get_internals() {
     return *internals_ptr;
 }
 
-/** Class that handles extracting pybind11-registered bases from a python base class.  For a class
+/**
+ * Class that handles extracting pybind11-registered bases from a python base class.  For a class
  * that doesn't use python-side multiple inheritance, this will be a single class; if the class has
  * multiple inheritance it could potentially be more.
  */
-struct all_type_info : all_type_info_data {
-    // NB: data members are in all_type_info_data, in common.h
+struct all_type_info {
+    // For a single-inheritance class hierarchy (from Python's point of view; i.e. not counting
+    // pybind11-handled C++ MI), this will be the found typeinfo.  Will be nullptr if no base was
+    // found, or if multiple inheritance was found.
+    detail::type_info *typeinfo = nullptr;
+    // For a class using python-side MI, this will be the found typeinfo of all registered bases.
+    // Will be empty for non-MI classes, or if MI was found but had no registered bases.
+    std::vector<detail::type_info *> all;
 
+    // Walks the inheritance tree to determine all base types associated with the given type
     explicit all_type_info(PyTypeObject *type) {
         auto const &type_dict = get_internals().registered_types_py;
         while (type) {
@@ -131,7 +139,13 @@ struct all_type_info : all_type_info_data {
         }
     }
 
-    explicit all_type_info(instance *inst) : all_type_info(Py_TYPE(inst)) {}
+    // Takes an existing, allocated instance; copies the cached type info from it
+    explicit all_type_info(instance *inst) {
+        if (inst->simple_layout)
+            typeinfo = reinterpret_cast<type_info *>(inst->typeinfo);
+        else
+            all = *reinterpret_cast<decltype(all) *>(inst->typeinfo);
+    }
 
     struct iterator {
     private:
@@ -139,6 +153,7 @@ struct all_type_info : all_type_info_data {
         vec_iter all_it;
         detail::type_info *single = nullptr;
     public:
+        iterator() = default;
         iterator(vec_iter &&it, detail::type_info *single_base)
             : all_it{std::move(it)}, single{single_base} {}
 
@@ -208,10 +223,8 @@ private:
     }
 };
 
-// Make sure we don't add any members to all_type_info (they need to go in all_type_info_data)
-static_assert(sizeof(all_type_info) == sizeof(all_type_info_data), "Internal error: detail::instance can't hold detail::all_type_info");
-
-/** Gets a single pybind11 type info for a python type.  Returns nullptr if neither the type nor any
+/**
+ * Gets a single pybind11 type info for a python type.  Returns nullptr if neither the type nor any
  * ancestors are pybind11-registered.  Throws an exception if there are multiple bases--use
  * `all_type_info` instead if you want to support multiple bases.
  */
@@ -246,24 +259,26 @@ PYBIND11_NOINLINE inline handle get_type_handle(const std::type_info &tp, bool t
 
 struct value_and_holder {
     instance *inst;
-    size_t vpos, index;
+    size_t index;
     detail::type_info *type;
+    void **vh;
 
-    value_and_holder(instance *i, detail::type_info *type, size_t vpos, size_t index)
-        : inst{i}, vpos{vpos}, index{index}, type{type} {}
+    value_and_holder(instance *i, detail::type_info *type, size_t vpos, size_t index) :
+        inst{i}, index{index}, type{type},
+        vh{inst->simple_layout ? inst->simple_value_holder : &inst->values_and_holders[vpos]}
+    {}
+
+    // Used for past-the-end iterator
+    value_and_holder(size_t index) : index{index} {}
 
     template <typename V = void> V *&value_ptr() const {
-        return reinterpret_cast<V *&>(
-                inst->simple_layout ? inst->simple_value_holder[0] :
-                inst->values_and_holders[vpos]);
+        return reinterpret_cast<V *&>(vh[0]);
     }
     // True if this `value_and_holder` has a non-null value pointer
     operator bool() const { return value_ptr(); }
 
     template <typename H> H &holder() const {
-        return reinterpret_cast<H &>(
-                inst->simple_layout ? inst->simple_value_holder[1] :
-                inst->values_and_holders[vpos + 1]);
+        return reinterpret_cast<H &>(vh[1]);
     }
     bool holder_constructed() const {
         if (inst->simple_layout) return inst->simple_holder_constructed;
@@ -281,9 +296,10 @@ struct value_and_holder {
 struct values_and_holders {
 private:
     instance *inst;
+    all_type_info tinfo;
 
 public:
-    values_and_holders(instance *inst) : inst{inst} {}
+    values_and_holders(instance *inst) : inst{inst}, tinfo(inst) {}
 
     struct iterator {
     private:
@@ -292,25 +308,26 @@ public:
         size_t end;
         value_and_holder curr;
         friend struct values_and_holders;
-        explicit iterator(instance *inst)
-            : inst{inst}, typeit{inst->all_type_info().begin()}, end{inst->all_type_info().size()},
+        iterator(instance *inst, const all_type_info &tinfo)
+            : inst{inst}, typeit{tinfo.begin()}, end{tinfo.size()},
             curr(inst /* instance */,
                  end > 0 ? *typeit : nullptr /* type info */,
-                 1 + ((end - 1) >> log2(sizeof(void *))), /* vpos - the first value is after the holder constructed flags (non-simple type only) */
+                 /* vpos: (non-simple types only: the first vptr comes after the holder constructed flags */
+                 size_in_ptrs(end),
                  0 /* index */)
         {}
         // Past-the-end iterator:
-        iterator(instance *inst, bool) : inst{inst}, typeit{inst->all_type_info().end()}, end{inst->all_type_info().size()},
-            curr(inst, nullptr, 0 /* dummy */, end)
-        {}
+        iterator(size_t end) : end{end}, curr(end) {}
     public:
         bool operator==(const iterator &other) { return curr.index == other.curr.index; }
         bool operator!=(const iterator &other) { return curr.index != other.curr.index; }
         iterator &operator++() {
-            curr.vpos += 1 + typeit->holder_size_in_ptrs;
+            if (!inst->simple_layout) {
+                curr.vh += 1 + typeit->holder_size_in_ptrs;
+                ++typeit;
+                curr.type = curr.index < end ? *typeit : nullptr;
+            }
             ++curr.index;
-            ++typeit;
-            curr.type = curr.index < end ? *typeit : nullptr;
             return *this;
         }
         value_and_holder &operator*() { return curr; }
@@ -318,8 +335,8 @@ public:
         type_info *type() { return *typeit; }
     };
 
-    iterator begin() { return iterator(inst); }
-    iterator end() { return iterator(inst, true); }
+    iterator begin() { return iterator(inst, tinfo); }
+    iterator end() { return iterator(tinfo.size()); }
 
     iterator find(const type_info *find_type) {
         auto it = begin(), endit = end();
@@ -329,10 +346,11 @@ public:
 
     value_and_holder front() { return *begin(); }
 
-    size_t size() { return inst->all_type_info().size(); }
+    size_t size() { return tinfo.size(); }
 };
 
-/** Extracts C++ value and holder pointer references from an instance (which may contain multiple
+/**
+ * Extracts C++ value and holder pointer references from an instance (which may contain multiple
  * values/holders for python-side multiple inheritance) that match the given type.  Throws an error
  * if the given type (or ValueType, if omitted) is not a pybind11 base of the given instance.
  *
@@ -357,45 +375,52 @@ PYBIND11_NOINLINE inline value_and_holder instance::get_value_and_holder(const t
 }
 
 PYBIND11_NOINLINE inline void instance::allocate_layout() {
-    new (&all_type_info_storage) detail::all_type_info(this);
+    all_type_info tinfo(Py_TYPE(this));
 
-    const size_t n_types = all_type_info().size();
+    const size_t n_types = tinfo.size();
+
+    if (n_types == 0)
+        pybind11_fail("instance allocation failed: new instance has no pybind11-registered base types");
+
     simple_layout =
-        n_types == 1 && all_type_info().front()->holder_size_in_ptrs <= instance_simple_holder_in_ptrs();
+        n_types == 1 && tinfo.front()->holder_size_in_ptrs <= instance_simple_holder_in_ptrs();
 
     // Simple path: no python-side multiple inheritance, and a small-enough holder
     if (simple_layout) {
         simple_value_holder[0] = nullptr;
         simple_holder_constructed = false;
+        typeinfo = tinfo.front();
     }
     else { // multiple base types or a too-large holder
-        // Allocate space to hold: [bb...][v1*][h1][v2*][h2]... where [vN*] is a value pointer, [hN]
-        // is the (uninitialized) holder instance for value N, and [bb...] is a set of bool values
-        // that tracks whether each associated holder has been initialized.  Each [block] is padded,
-        // if necessary, to an integer multiple of sizeof(void *).
-        const size_t n_flag_ptrs = 1 + ((n_types - 1) >> log2(sizeof(void *)));
-        size_t space = n_flag_ptrs;
-        for (auto tinfo : all_type_info()) {
-            space += 1;
-            space += tinfo->holder_size_in_ptrs;
+        // Allocate space to hold: [TIV][bb...][v1*][h1][v2*][h2]... where [vN*] is a value pointer,
+        // [hN] is the (uninitialized) holder instance for value N, and [bb...] is a set of bool
+        // values that tracks whether each associated holder has been initialized, and TIV is a
+        // vector of type_infos.  Each [block] is padded, if necessary, to an integer multiple of
+        // sizeof(void *).
+        size_t space = size_in_ptrs(n_types);
+        for (auto t : tinfo) {
+            space += 1; // value pointer
+            space += t->holder_size_in_ptrs; // holder instance
         }
 
-        // Allocate space for flags, values, and holders; initialize the space to 0 (flags and
-        // values need to be 0, and it doesn't hurt the holders)
+        // Allocate space for types, flags, values, and holders, and initialize it to 0 (flags and
+        // values, in particular, need to be 0)
 #if PY_VERSION_HEX >= 0x03050000
         values_and_holders = (void **) PyMem_Calloc(space, sizeof(void *));
 #else
         values_and_holders = (void **) PyMem_New(void *, space);
         std::memset(values_and_holders, 0, space * sizeof(void *));
 #endif
+        typeinfo = new decltype(tinfo.all)(std::move(tinfo.all));
     }
     owned = true;
 }
 
 PYBIND11_NOINLINE inline void instance::deallocate_layout() {
-    if (!simple_layout)
+    if (!simple_layout) {
+        delete static_cast<decltype(all_type_info::all) *>(typeinfo);
         PyMem_Free(values_and_holders);
-    reinterpret_cast<detail::all_type_info &>(all_type_info_storage).~all_type_info();
+    }
 }
 
 PYBIND11_NOINLINE inline bool isinstance_generic(handle obj, const std::type_info &tp) {

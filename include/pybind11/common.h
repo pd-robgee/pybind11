@@ -295,9 +295,13 @@ NAMESPACE_BEGIN(detail)
 
 inline static constexpr int log2(size_t n, int k = 0) { return (n <= 1) ? k : log2(n >> 1, k + 1); }
 
+// Returns the size as a multiple of sizeof(void *), rounded up.
+inline static constexpr size_t size_in_ptrs(size_t s) { return 1 + ((s - 1) >> log2(sizeof(void *))); }
+
 inline std::string error_string();
 
-/** The space to allocate for simple layout instance holders (see below) in multiple of the size of
+/**
+ * The space to allocate for simple layout instance holders (see below) in multiple of the size of
  * a pointer (e.g.  2 means 16 bytes on 64-bit architectures).  The default is the minimum required
  * to holder either a std::unique_ptr or std::shared_ptr (which is almost always
  * sizeof(std::shared_ptr<T>)).
@@ -312,32 +316,26 @@ constexpr size_t instance_simple_holder_in_ptrs() {
 struct type_info;
 struct all_type_info;
 struct value_and_holder;
-struct all_type_info_data {
-    // For a single-inheritance class hierarchy (from Python's point of view; i.e. not counting
-    // pybind11-handled C++ MI), this will be the found typeinfo.  Will be nullptr if no base was
-    // found, or if multiple inheritance was found.
-    detail::type_info *typeinfo = nullptr;
-    // For a class using python-side MI, this will be the found typeinfo of all registered bases.
-    // Will be empty for non-MI classes, or if MI was found but had no registered bases.
-    std::vector<detail::type_info *> all;
-};
 
 /// The 'instance' type which needs to be standard layout (need to be able to use 'offsetof')
 struct instance {
     PyObject_HEAD
-    // Storage for pointers and holder; see simple_layout, below, for a description
+    /// Storage for pointers and holder; see simple_layout, below, for a description
     union {
         void *simple_value_holder[1 + instance_simple_holder_in_ptrs()];
         void **values_and_holders;
     };
-    // Storage space for an `all_type_info` instance tracking the type (or types) stored in this instance.
-    // Can't just use an `all_type_info_data` member here because the vector, in particular, might not be standard layout
-    alignas(all_type_info_data) unsigned char all_type_info_storage[sizeof(all_type_info_data)];
-    // Weak references (needed for keep alive):
+    /// For a simple_layout type, this is the detail::type_info associated with the instance.  For a
+    /// complex type, this is a pointer to std::vector holding all pybind base types.  This is
+    /// cached here so that we don't have to rescan the inheritance tree for a given instance each
+    /// time it is needed.
+    void *typeinfo;
+    /// Weak references (needed for keep alive):
     PyObject *weakrefs;
     /// If true, the pointer is owned which means we're free to manage it with a holder.
     bool owned : 1;
-    /** An instance has two possible value/holder layouts.
+    /**
+     * An instance has two possible value/holder layouts.
      *
      * Simple layout (when this flag is true), means the `simple_value_holder` is set with a pointer
      * and the holder object governing that pointer, i.e. [val1*][holder].  This layout is applied
@@ -355,18 +353,13 @@ struct instance {
      */
     bool simple_layout : 1;
     /// For simple layout, tracks whether the holder has been constructed
-    bool simple_holder_constructed : 1;
-
+    unsigned char simple_holder_constructed;
 
     /// Initializes all of the above type/values/holders data
     void allocate_layout();
 
     /// Destroys/deallocates all of the above
     void deallocate_layout();
-
-    /// Accesses the all_type_info object associated with this instance.  Only available after
-    /// allocate_layout has been called.
-    const detail::all_type_info &all_type_info() const { return reinterpret_cast<const detail::all_type_info &>(all_type_info_storage); }
 
     /// Returns the value_and_holder wrapper for the given type
     value_and_holder get_value_and_holder(const type_info *find_type);
