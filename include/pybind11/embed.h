@@ -149,6 +149,12 @@ inline void finalize_interpreter() {
 
     Py_Finalize();
 
+    // If something in Py_Finalize() calls get_internals() the pointer could be created, even if it
+    // didn't exist above.  (But we still use the above because if nothing calls get_internals() we
+    // might not have the static pointer set in get_internals_ptr())
+    if (!internals_ptr_ptr)
+        internals_ptr_ptr = &detail::get_internals_ptr();
+
     if (internals_ptr_ptr) {
         delete *internals_ptr_ptr;
         *internals_ptr_ptr = nullptr;
