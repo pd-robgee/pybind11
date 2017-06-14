@@ -173,6 +173,7 @@ install:
       else
         find ~/.local/include/c++
         echo "int main() {}" >foo.cpp
+        which clang++
         clang++ -flto=thin foo.cpp
       fi
       export CXXFLAGS="-isystem $HOME/.local/include/c++/v1 -stdlib=libc++"
