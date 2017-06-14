@@ -199,8 +199,8 @@ script:
     -DPYBIND11_CPP_STANDARD=$CPP
     -DPYBIND11_WERROR=${WERROR:-ON}
     -DDOWNLOAD_CATCH=ON
-- $SCRIPT_RUN_PREFIX make pytest -j 2
-- $SCRIPT_RUN_PREFIX make cpptest -j 2
+- $SCRIPT_RUN_PREFIX make pytest -j 2 VERBOSE=1
+- $SCRIPT_RUN_PREFIX make cpptest -j 2 VERBOSE=1
 - $SCRIPT_RUN_PREFIX make test_cmake_build
 after_failure: cat tests/test_cmake_build/*.log*
 after_script:
