@@ -170,6 +170,8 @@ install:
         make -j2 install-cxxabi install-cxx
         cp -a include/c++/v1/*cxxabi*.h ~/.local/include/c++/v1
         cd ..
+      else
+        find ~/.local/include/c++
       fi
       export CXXFLAGS="-isystem $HOME/.local/include/c++/v1 -stdlib=libc++"
       export LDFLAGS="-L$HOME/.local/lib"
