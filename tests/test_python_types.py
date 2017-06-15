@@ -385,19 +385,22 @@ def test_exp_optional():
 
 @pytest.mark.skipif(not hasattr(pybind11_tests, "load_variant"), reason='no <variant>')
 def test_variant(doc):
-    from pybind11_tests import load_variant, load_variant_2pass, cast_variant
+    from pybind11_tests import load_variant, load_variant_2pass, cast_variant, vector_variant
 
     assert load_variant(1) == "int"
     assert load_variant("1") == "std::string"
     assert load_variant(1.0) == "double"
     assert load_variant(None) == "std::nullptr_t"
 
+    assert doc(load_variant) == "load_variant(arg0: Union[int, str, float, None]) -> str"
+
     assert load_variant_2pass(1) == "int"
     assert load_variant_2pass(1.0) == "double"
 
     assert cast_variant() == (5, "Hello")
 
-    assert doc(load_variant) == "load_variant(arg0: Union[int, str, float, None]) -> str"
+    assert vector_variant([1, 2, 3]) == ("int vector", 6)
+    assert vector_variant([1.5, 10.0, 0.25, 1.0]) == ("float vector", 12.75)
 
 
 def test_constructors():

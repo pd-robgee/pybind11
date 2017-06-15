@@ -11,6 +11,7 @@
 #include "pybind11_tests.h"
 #include "constructor_stats.h"
 #include <pybind11/stl.h>
+#include <numeric>
 
 #ifdef _WIN32
 #  include <io.h>
@@ -413,6 +414,14 @@ test_initializer python_types([](py::module &m) {
         using V = std::variant<int, std::string>;
         return py::make_tuple(V(5), V("Hello"));
     });
+
+    m.def("vector_variant", [](const std::variant<std::vector<float>, std::vector<int>> &in) {
+        if (auto *intv = std::get_if<std::vector<int>>(&in))
+            return py::make_tuple("int vector", std::accumulate(intv->begin(), intv->end(), 0));
+        auto &floatv = std::get<0>(in);
+        return py::make_tuple("float vector", std::accumulate(floatv.begin(), floatv.end(), 0.0f));
+    });
+
 #endif
 
     m.def("test_default_constructors", []() {
