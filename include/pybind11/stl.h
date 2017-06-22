@@ -304,6 +304,9 @@ struct variant_caster<V<Ts...>> {
         auto caster = make_caster<U>();
         if (caster.load(src, convert)) {
             value = cast_op<U>(caster);
+            // We need to keep the subcaster alive as long as the variant_caster stays alive because
+            // the value might depend on it
+            subcaster = std::move(caster);
             return true;
         }
         return load_alternative(src, convert, type_list<Us...>{});
@@ -329,6 +332,9 @@ struct variant_caster<V<Ts...>> {
 
     using Type = V<Ts...>;
     PYBIND11_TYPE_CASTER(Type, _("Union[") + detail::concat(make_caster<Ts>::name()...) + _("]"));
+
+private:
+    V<make_caster<Ts>...> subcaster;
 };
 
 #if PYBIND11_HAS_VARIANT
