@@ -26,6 +26,13 @@ endif()
 
 # Full set of test files (you can override these; see below)
 set(PYBIND11_TEST_FILES
+  # These tests take particularly long to compile relative to the other tests,
+  # so move them earlier to reduce overall compilation time when building in
+  # parallel:
+  test_stl_binders.cpp
+  test_eigen.cpp
+
+  # The rest are alphabetical:
   test_buffers.cpp
   test_builtin_casters.cpp
   test_call_policies.cpp
@@ -35,7 +42,6 @@ set(PYBIND11_TEST_FILES
   test_constants_and_functions.cpp
   test_copy_move.cpp
   test_docstring_options.cpp
-  test_eigen.cpp
   test_enum.cpp
   test_eval.cpp
   test_exceptions.cpp
@@ -53,7 +59,6 @@ set(PYBIND11_TEST_FILES
   test_sequences_and_iterators.cpp
   test_smart_ptr.cpp
   test_stl.cpp
-  test_stl_binders.cpp
   test_virtual_functions.cpp
 )
 
