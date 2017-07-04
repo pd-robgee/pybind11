@@ -1255,50 +1255,13 @@ public:
     template <typename _T> using cast_op_type = remove_reference_t<pybind11::detail::cast_op_type<_T>>;
 };
 
-template <typename T1, typename T2> class type_caster<std::pair<T1, T2>> {
-    typedef std::pair<T1, T2> type;
-public:
-    bool load(handle src, bool convert) {
-        if (!isinstance<sequence>(src))
-            return false;
-        const auto seq = reinterpret_borrow<sequence>(src);
-        if (seq.size() != 2)
-            return false;
-        return first.load(seq[0], convert) && second.load(seq[1], convert);
-    }
-
-    static handle cast(const type &src, return_value_policy policy, handle parent) {
-        auto o1 = reinterpret_steal<object>(make_caster<T1>::cast(src.first, policy, parent));
-        auto o2 = reinterpret_steal<object>(make_caster<T2>::cast(src.second, policy, parent));
-        if (!o1 || !o2)
-            return handle();
-        tuple result(2);
-        PyTuple_SET_ITEM(result.ptr(), 0, o1.release().ptr());
-        PyTuple_SET_ITEM(result.ptr(), 1, o2.release().ptr());
-        return result.release();
-    }
-
-    static PYBIND11_DESCR name() {
-        return type_descr(
-            _("Tuple[") + make_caster<T1>::name() + _(", ") + make_caster<T2>::name() + _("]")
-        );
-    }
-
-    template <typename T> using cast_op_type = type;
-
-    operator type() & { return type(cast_op<T1>(first), cast_op<T2>(second)); }
-    operator type() && { return type(cast_op<T1>(std::move(first)), cast_op<T2>(std::move(second))); }
-protected:
-    make_caster<T1> first;
-    make_caster<T2> second;
-};
-
-template <typename... Tuple> class type_caster<std::tuple<Tuple...>> {
-    using type = std::tuple<Tuple...>;
-    using indices = make_index_sequence<sizeof...(Tuple)>;
+// Base implementation for std::tuple and std::pair
+template <template<typename...> class TupleType, typename... Tuple> class tuple_caster {
+    using type = TupleType<Tuple...>;
     static constexpr auto size = sizeof...(Tuple);
-
+    using indices = make_index_sequence<size>;
 public:
+
     bool load(handle src, bool convert) {
         if (!isinstance<sequence>(src))
             return false;
@@ -1326,7 +1289,6 @@ protected:
     type implicit_cast(index_sequence<Is...>) & { return type(cast_op<Tuple>(std::get<Is>(subcasters))...); }
     template <size_t... Is>
     type implicit_cast(index_sequence<Is...>) && { return type(cast_op<Tuple>(std::move(std::get<Is>(subcasters)))...); }
-
 
     static constexpr bool load_impl(const sequence &, bool, index_sequence<>) { return true; }
 
@@ -1357,8 +1319,14 @@ protected:
         return result.release();
     }
 
-    std::tuple<make_caster<Tuple>...> subcasters;
+    TupleType<make_caster<Tuple>...> subcasters;
 };
+
+template <typename T1, typename T2> class type_caster<std::pair<T1, T2>>
+    : public tuple_caster<std::pair, T1, T2> {};
+
+template <typename... Tuple> class type_caster<std::tuple<Tuple...>>
+    : public tuple_caster<std::tuple, Tuple...> {};
 
 /// Helper class which abstracts away certain actions. Users can provide specializations for
 /// custom holders, but it's only necessary if the type has a non-standard interface.
