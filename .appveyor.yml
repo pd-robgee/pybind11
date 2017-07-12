@@ -16,6 +16,9 @@ environment:
     CPP: 14
   - CONDA: 36
     CPP: latest
+  - CONDA: 36
+    CPP: latest
+    BUILD_CONFIG: Debug
 matrix:
   exclude:
     - image: Visual Studio 2015
@@ -42,6 +45,9 @@ install:
       $env:PYTHONHOME = "C:\Miniconda$env:CONDA"
       conda install -y -q pytest numpy scipy
     }
+    if (!$env:BUILD_CONFIG) {
+      $env:BUILD_CONFIG = "Release"
+    }
 - ps: |
     Start-FileDownload 'http://bitbucket.org/eigen/eigen/get/3.3.3.zip'
     7z x 3.3.3.zip -y > $null
@@ -53,7 +59,7 @@ build_script:
     -DDOWNLOAD_CATCH=ON
     -DCMAKE_SUPPRESS_REGENERATION=1
 - set MSBuildLogger="C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll"
-- cmake --build . --config Release --target pytest -- /v:m /logger:%MSBuildLogger%
-- cmake --build . --config Release --target cpptest -- /v:m /logger:%MSBuildLogger%
-- cmake --build . --config Release --target test_cmake_build -- /v:m /logger:%MSBuildLogger%
+- cmake --build . --config %BUILD_CONFIG% --target pytest -- /v:m /logger:%MSBuildLogger%
+- cmake --build . --config %BUILD_CONFIG% --target cpptest -- /v:m /logger:%MSBuildLogger%
+- cmake --build . --config %BUILD_CONFIG% --target test_cmake_build -- /v:m /logger:%MSBuildLogger%
 on_failure: if exist "tests\test_cmake_build" type tests\test_cmake_build\*.log*
