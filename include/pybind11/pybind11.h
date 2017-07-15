@@ -217,7 +217,7 @@ protected:
                     if (!rec->args.empty() && rec->args[arg_index].name) {
                         signature += rec->args[arg_index].name;
                     } else if (arg_index == 0 && rec->is_method) {
-                        signature += "self";
+                        signature += rec->is_classmethod ? "cls" : "self";
                     } else {
                         signature += "arg" + std::to_string(arg_index - (rec->is_method ? 1 : 0));
                     }
@@ -301,6 +301,10 @@ protected:
             rec->def->ml_name = rec->name;
             rec->def->ml_meth = reinterpret_cast<PyCFunction>(*dispatcher);
             rec->def->ml_flags = METH_VARARGS | METH_KEYWORDS;
+            if (rec->is_classmethod) {
+                std::cerr << rec->name << " is a class method!\n";
+                rec->def->ml_flags |= METH_CLASS;
+            }
 
             capsule rec_capsule(rec, [](void *ptr) {
                 destruct((detail::function_record *) ptr);
@@ -308,6 +312,7 @@ protected:
 
             object scope_module;
             if (rec->scope) {
+                std::cerr << rec->name << " has scope " << (std::string) pybind11::str(rec->scope) << "\n";
                 if (hasattr(rec->scope, "__module__")) {
                     scope_module = rec->scope.attr("__module__");
                 } else if (hasattr(rec->scope, "__name__")) {
@@ -323,12 +328,13 @@ protected:
             m_ptr = rec->sibling.ptr();
             inc_ref();
             chain_start = chain;
-            if (chain->is_method != rec->is_method)
-                pybind11_fail("overloading a method with both static and instance methods is not supported; "
+            if (chain->is_method != rec->is_method || chain->is_classmethod != rec->is_classmethod)
+                pybind11_fail("overloading a method with multiple of static, instance, and class methods is not supported; "
                     #if defined(NDEBUG)
                         "compile in debug mode for more details"
                     #else
-                        "error while attempting to bind " + std::string(rec->is_method ? "instance" : "static") + " method " +
+                        "error while attempting to bind " +
+                        std::string(rec->is_method ? rec->is_classmethod ? "class" : "instance" : "static") + " method " +
                         std::string(pybind11::str(rec->scope.attr("__name__"))) + "." + std::string(rec->name) + signature
                     #endif
                 );
@@ -377,7 +383,7 @@ protected:
             std::free(const_cast<char *>(func->m_ml->ml_doc));
         func->m_ml->ml_doc = strdup(signatures.c_str());
 
-        if (rec->is_method) {
+        if (rec->is_method && !rec->is_classmethod) {
             m_ptr = PYBIND11_INSTANCE_METHOD_NEW(m_ptr, rec->scope.ptr());
             if (!m_ptr)
                 pybind11_fail("cpp_function::cpp_function(): Could not allocate instance method object");
@@ -419,6 +425,7 @@ protected:
         /* Need to know how many arguments + keyword arguments there are to pick the right overload */
         const size_t n_args_in = (size_t) PyTuple_GET_SIZE(args_in);
 
+        std::cerr << "dispatcher invoked on self=" << (std::string) pybind11::str(self) << "\n";
         handle parent = n_args_in > 0 ? PyTuple_GET_ITEM(args_in, 0) : nullptr,
                result = PYBIND11_TRY_NEXT_OVERLOAD;
 
@@ -458,6 +465,7 @@ protected:
                 if (func.has_args) --pos_args;   // (but don't count py::args
                 if (func.has_kwargs) --pos_args; //  or py::kwargs)
 
+                std::cerr << "func overload for " << func.name << ": " << n_args_in << " vs " << pos_args << "\n";
                 if (!func.has_args && n_args_in > pos_args)
                     continue; // Too many arguments for this overload
 

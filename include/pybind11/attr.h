@@ -20,6 +20,9 @@ NAMESPACE_BEGIN(pybind11)
 /// Annotation for methods
 struct is_method { handle class_; is_method(const handle &c) : class_(c) { } };
 
+/// Annotation for class methods that take the type as first argument (i.e. like @classmethod)
+struct classmethod { };
+
 /// Annotation for operators
 struct is_operator { };
 
@@ -133,7 +136,7 @@ struct argument_record {
 struct function_record {
     function_record()
         : is_constructor(false), is_stateless(false), is_operator(false),
-          has_args(false), has_kwargs(false), is_method(false) { }
+          has_args(false), has_kwargs(false), is_method(false), is_classmethod(false) { }
 
     /// Function name
     char *name = nullptr; /* why no C++ strings? They generate heavier code.. */
@@ -176,6 +179,9 @@ struct function_record {
 
     /// True if this is a method
     bool is_method : 1;
+
+    /// True if this is a method that takes the type rather than instance as first argument (i.e. like @classmethod)
+    bool is_classmethod : 1;
 
     /// Number of arguments (including py::args and/or py::kwargs, if present)
     std::uint16_t nargs;
@@ -325,6 +331,16 @@ template <> struct process_attribute<is_method> : process_attribute_default<is_m
     static void init(const is_method &s, function_record *r) { r->is_method = true; r->scope = s.class_; }
 };
 
+/// Process an attribute which indicates that this function is a @classmethod
+template <> struct process_attribute<classmethod> : process_attribute_default<classmethod> {
+    static void init(const classmethod &, function_record *r) {
+        // cls.def(...) injects the `is_method` attribute before extra attributes, so `is_method`
+        // will be set already if an instance method:
+        if (!r->is_method) pybind11_fail("classmethod attribute cannot be applied to a static method or function");
+        r->is_classmethod = true;
+    }
+};
+
 /// Process an attribute which indicates the parent scope of a method
 template <> struct process_attribute<scope> : process_attribute_default<scope> {
     static void init(const scope &s, function_record *r) { r->scope = s.value; }
@@ -339,7 +355,7 @@ template <> struct process_attribute<is_operator> : process_attribute_default<is
 template <> struct process_attribute<arg> : process_attribute_default<arg> {
     static void init(const arg &a, function_record *r) {
         if (r->is_method && r->args.empty())
-            r->args.emplace_back("self", nullptr, handle(), true /*convert*/, false /*none not allowed*/);
+            r->args.emplace_back(r->is_classmethod ? "cls" : "self", nullptr, handle(), true /*convert*/, false /*none not allowed*/);
         r->args.emplace_back(a.name, nullptr, handle(), !a.flag_noconvert, a.flag_none);
     }
 };
@@ -348,7 +364,7 @@ template <> struct process_attribute<arg> : process_attribute_default<arg> {
 template <> struct process_attribute<arg_v> : process_attribute_default<arg_v> {
     static void init(const arg_v &a, function_record *r) {
         if (r->is_method && r->args.empty())
-            r->args.emplace_back("self", nullptr /*descr*/, handle() /*parent*/, true /*convert*/, false /*none not allowed*/);
+            r->args.emplace_back(r->is_classmethod ? "cls" : "self", nullptr /*descr*/, handle() /*parent*/, true /*convert*/, false /*none not allowed*/);
 
         if (!a.value) {
 #if !defined(NDEBUG)
