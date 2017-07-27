@@ -940,7 +940,7 @@ class class_ : public detail::generic_type {
     template <typename T> using is_base = detail::is_strict_base_of<T, type_>;
     // struct instead of using here to help MSVC:
     template <typename T> struct is_valid_class_option :
-        detail::any_of<is_holder<T>, is_subtype<T>, is_base<T>> {};
+        detail::satisfies_any_of<T, is_holder, is_subtype, is_base> {};
 
 public:
     using type = type_;

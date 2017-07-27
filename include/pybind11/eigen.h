@@ -61,7 +61,7 @@ template <typename T> using is_eigen_sparse = is_template_base_of<Eigen::SparseM
 // SelfAdjointView fall into this category.
 template <typename T> using is_eigen_other = all_of<
     is_template_base_of<Eigen::EigenBase, T>,
-    negation<any_of<is_eigen_dense_map<T>, is_eigen_dense_plain<T>, is_eigen_sparse<T>>>
+    satisfies_none_of<T, is_eigen_dense_map, is_eigen_dense_plain, is_eigen_sparse>
 >;
 
 // Captures numpy/eigen conformability status (returned by EigenProps::conformable()):
@@ -495,11 +495,11 @@ private:
     // Otherwise, if there is a one-index constructor, and just one of the strides is dynamic, use
     // it (passing whichever stride is dynamic).
     template <typename S> using stride_ctor_outer = bool_constant<
-        !any_of<stride_ctor_default<S>, stride_ctor_dual<S>>::value &&
+        satisfies_none_of<S, stride_ctor_default, stride_ctor_dual>::value &&
         S::OuterStrideAtCompileTime == Eigen::Dynamic && S::InnerStrideAtCompileTime != Eigen::Dynamic &&
         std::is_constructible<S, EigenIndex>::value>;
     template <typename S> using stride_ctor_inner = bool_constant<
-        !any_of<stride_ctor_default<S>, stride_ctor_dual<S>>::value &&
+        satisfies_none_of<S, stride_ctor_default, stride_ctor_dual>::value &&
         S::InnerStrideAtCompileTime == Eigen::Dynamic && S::OuterStrideAtCompileTime != Eigen::Dynamic &&
         std::is_constructible<S, EigenIndex>::value>;
 
