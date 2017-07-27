@@ -799,6 +799,7 @@ struct nodelete { template <typename T> void operator()(T*) { } };
 #if defined(PYBIND11_CPP14)
 #define PYBIND11_OVERLOAD_CAST 1
 
+/*
 NAMESPACE_BEGIN(detail)
 template <typename... Args>
 struct overload_cast_impl {
@@ -815,13 +816,26 @@ struct overload_cast_impl {
                               -> decltype(pmf) { return pmf; }
 };
 NAMESPACE_END(detail)
+*/
 
 /// Syntax sugar for resolving overloaded function pointers:
 ///  - regular: static_cast<Return (Class::*)(Arg0, Arg1, Arg2)>(&Class::func)
 ///  - sweet:   overload_cast<Arg0, Arg1, Arg2>(&Class::func)
-template <typename... Args>
-static constexpr detail::overload_cast_impl<Args...> overload_cast = {};
+//template <typename... Args>
+//static constexpr detail::overload_cast_impl<Args...> overload_cast = {};
+/*template <typename... Args, typename F>
+constexpr auto overload_cast(F &f) { return detail::overload_cast_impl<Args...>()(f); }*/
 // MSVC 2015 only accepts this particular initialization syntax for this variable template.
+
+template <typename... Args, typename Return>
+constexpr auto overload_cast(Return (*pf)(Args...)) noexcept { return pf; }
+
+template <typename... Args, typename Return, typename Class>
+constexpr auto overload_cast(Return (Class::*pmf)(Args...), std::false_type = {}) noexcept { return pmf; }
+
+template <typename... Args, typename Return, typename Class>
+constexpr auto overload_cast(Return (Class::*pmf)(Args...) const, std::true_type) noexcept { return pmf; }
+
 
 /// Const member function selector for overload_cast
 ///  - regular: static_cast<Return (Class::*)(Arg) const>(&Class::func)
