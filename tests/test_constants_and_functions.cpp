@@ -23,6 +23,8 @@ std::string test_function3(int i) {
     return "test_function(" + std::to_string(i) + ")";
 }
 
+py::str test_function4()           { return "test_function()"; }
+py::str test_function4(int)        { return "test_function(int)"; }
 py::str test_function4(int, float) { return "test_function(int, float)"; }
 py::str test_function4(float, int) { return "test_function(float, int)"; }
 
@@ -70,8 +72,17 @@ TEST_SUBMODULE(constants_and_functions, m) {
     m.def("test_function", &test_function2);
     m.def("test_function", &test_function3);
 
+#if defined(PYBIND11_OVERLOAD_CAST)
+    m.def("test_function", py::overload_cast<>(&test_function4));
+    m.def("test_function", py::overload_cast<int>(&test_function4));
     m.def("test_function", py::overload_cast<int, float>(&test_function4));
     m.def("test_function", py::overload_cast<float, int>(&test_function4));
+#else
+    m.def("test_function", static_cast<py::str (*)()>(&test_function4));
+    m.def("test_function", static_cast<py::str (*)(int)>(&test_function4));
+    m.def("test_function", static_cast<py::str (*)(int, float)>(&test_function4));
+    m.def("test_function", static_cast<py::str (*)(float, int)>(&test_function4));
+#endif
 
     py::enum_<MyEnum>(m, "MyEnum")
         .value("EFirstEntry", EFirstEntry)
