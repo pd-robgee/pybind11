@@ -32,10 +32,13 @@ def test_methods_and_attributes():
     assert instance1.internal4() == 320
     assert instance1.internal5() == 320
 
+    assert instance1.overloaded() == "()"
+    assert instance1.overloaded(0) == "(int)"
     assert instance1.overloaded(1, 1.0) == "(int, float)"
     assert instance1.overloaded(2.0, 2) == "(float, int)"
     assert instance1.overloaded(3,   3) == "(int, int)"
     assert instance1.overloaded(4., 4.) == "(float, float)"
+    assert instance1.overloaded_const(-3) == "(int) const"
     assert instance1.overloaded_const(5, 5.0) == "(int, float) const"
     assert instance1.overloaded_const(6.0, 6) == "(float, int) const"
     assert instance1.overloaded_const(7,   7) == "(int, int) const"
