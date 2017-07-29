@@ -802,16 +802,14 @@ struct nodelete { template <typename T> void operator()(T*) { } };
 NAMESPACE_BEGIN(detail)
 template <typename... Args>
 struct overload_cast_impl {
+    constexpr overload_cast_impl() {} // MSVC 2015 needs this
+
     template <typename Return>
     constexpr auto operator()(Return (*pf)(Args...)) const noexcept
                               -> decltype(pf) { return pf; }
 
     template <typename Return, typename Class>
-    constexpr auto operator()(Return (Class::*pmf)(Args...)) const noexcept
-                              -> decltype(pmf) { return pmf; }
-
-    template <typename Return, typename Class>
-    constexpr auto operator()(Return (Class::*pmf)(Args...), std::false_type) const noexcept
+    constexpr auto operator()(Return (Class::*pmf)(Args...), std::false_type = {}) const noexcept
                               -> decltype(pmf) { return pmf; }
 
     template <typename Return, typename Class>
