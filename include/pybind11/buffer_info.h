@@ -11,7 +11,7 @@
 
 #include "common.h"
 
-NAMESPACE_BEGIN(pybind11)
+NAMESPACE_BEGIN(PYBIND11_NAMESPACE)
 
 /// Information record describing a Python buffer object
 struct buffer_info {

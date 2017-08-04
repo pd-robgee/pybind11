@@ -11,7 +11,7 @@
 
 #include "attr.h"
 
-NAMESPACE_BEGIN(pybind11)
+NAMESPACE_BEGIN(PYBIND11_NAMESPACE)
 NAMESPACE_BEGIN(detail)
 
 inline PyTypeObject *type_incref(PyTypeObject *type) {

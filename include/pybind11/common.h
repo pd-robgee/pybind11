@@ -9,6 +9,13 @@
 
 #pragma once
 
+// Under GNU-style compilers, force hidden visibility on everything in the pybind11 namespace:
+#ifdef __GNUG__
+#  define PYBIND11_NAMESPACE pybind11 __attribute__((visibility("hidden")))
+#else
+#  define PYBIND11_NAMESPACE pybind11
+#endif
+
 #if !defined(NAMESPACE_BEGIN)
 #  define NAMESPACE_BEGIN(name) namespace name {
 #endif
@@ -297,7 +304,7 @@ extern "C" {
     void pybind11_init_##name(pybind11::module &variable)
 
 
-NAMESPACE_BEGIN(pybind11)
+NAMESPACE_BEGIN(PYBIND11_NAMESPACE)
 
 using ssize_t = Py_ssize_t;
 using size_t  = std::size_t;

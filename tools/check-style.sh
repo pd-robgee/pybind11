@@ -68,6 +68,18 @@ grep '\<\(if\|for\|while\|catch\)(\|){' include tests/*.{cpp,py,h} -rn --color=a
 done
 
 found=
+grep 'NAMESPACE_BEGIN(pybind11)' include -rn --color=always |
+        while read line; do
+    if [ -z "$found" ]; then
+        echo -e '\033[31m\033[01mError: found NAMESPACE_BEGIN(pybind11) which should be NAMESPACE_BEGIN(PYBIND11_NAMESPACE):\033[0m'
+        found=1
+        errors=1
+    fi
+
+    echo "    $line"
+done
+
+found=
 GREP_COLORS='mt=41' GREP_COLOR='41' grep '^\s*{\s*$' include docs/*.rst -rn --color=always |
         while read f; do
     if [ -z "$found" ]; then

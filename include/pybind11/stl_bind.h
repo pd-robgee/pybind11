@@ -15,7 +15,7 @@
 #include <algorithm>
 #include <sstream>
 
-NAMESPACE_BEGIN(pybind11)
+NAMESPACE_BEGIN(PYBIND11_NAMESPACE)
 NAMESPACE_BEGIN(detail)
 
 /* SFINAE helper class used by 'is_comparable */

@@ -13,7 +13,7 @@
 
 #include "pybind11.h"
 
-NAMESPACE_BEGIN(pybind11)
+NAMESPACE_BEGIN(PYBIND11_NAMESPACE)
 
 enum eval_mode {
     /// Evaluate a string containing an isolated expression

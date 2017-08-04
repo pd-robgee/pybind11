@@ -30,7 +30,7 @@
 #include <string_view>
 #endif
 
-NAMESPACE_BEGIN(pybind11)
+NAMESPACE_BEGIN(PYBIND11_NAMESPACE)
 NAMESPACE_BEGIN(detail)
 // Forward declarations:
 inline PyTypeObject *make_static_property_type();

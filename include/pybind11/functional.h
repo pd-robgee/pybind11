@@ -12,7 +12,7 @@
 #include "pybind11.h"
 #include <functional>
 
-NAMESPACE_BEGIN(pybind11)
+NAMESPACE_BEGIN(PYBIND11_NAMESPACE)
 NAMESPACE_BEGIN(detail)
 
 template <typename Return, typename... Args>

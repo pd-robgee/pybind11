@@ -11,7 +11,7 @@
 
 #include "common.h"
 
-NAMESPACE_BEGIN(pybind11)
+NAMESPACE_BEGIN(PYBIND11_NAMESPACE)
 
 class options {
 public:

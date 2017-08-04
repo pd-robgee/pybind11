@@ -16,7 +16,7 @@
 #include <cxxabi.h>
 #endif
 
-NAMESPACE_BEGIN(pybind11)
+NAMESPACE_BEGIN(PYBIND11_NAMESPACE)
 NAMESPACE_BEGIN(detail)
 /// Erase all occurrences of a substring
 inline void erase_all(std::string &string, const std::string &search) {

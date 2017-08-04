@@ -12,7 +12,7 @@
 
 #include "common.h"
 
-NAMESPACE_BEGIN(pybind11)
+NAMESPACE_BEGIN(PYBIND11_NAMESPACE)
 NAMESPACE_BEGIN(detail)
 
 /* Concatenate type signatures at compile time using C++14 */
