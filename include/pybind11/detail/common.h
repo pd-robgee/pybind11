@@ -167,6 +167,9 @@
 #define PYBIND11_NB_BOOL(ptr) ((ptr)->nb_bool)
 #define PYBIND11_PLUGIN_IMPL(name) \
     extern "C" PYBIND11_EXPORT PyObject *PyInit_##name()
+#if PY_MINOR_VERSION >= 3 && !defined(PYPY_VERSION)
+#define PYBIND11_HAVE_QUALNAME
+#endif
 
 #else
 #define PYBIND11_INSTANCE_METHOD_NEW(ptr, class_) PyMethod_New(ptr, nullptr, class_)

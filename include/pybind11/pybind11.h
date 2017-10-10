@@ -81,7 +81,14 @@ public:
     }
 
     /// Return the function name
-    object name() const { return attr("__name__"); }
+    object name() const {
+#if defined(PYPY_VERSION) && PY_MAJOR_VERSION >= 3
+        if (PyInstanceMethod_Check(m_ptr))
+            return handle(PYBIND11_INSTANCE_METHOD_GET_FUNCTION(m_ptr)).attr("__name__");
+        else
+#endif
+        return attr("__name__");
+    }
 
 protected:
     /// Space optimization: don't inline this frequently instantiated fragment

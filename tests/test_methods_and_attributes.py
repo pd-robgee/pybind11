@@ -64,6 +64,7 @@ def test_methods_and_attributes():
     assert cstats.move_assignments == 0
 
 
+@pytest.unsupported_on_pypy3
 def test_copy_method():
     """Issue #443: calling copied methods fails in Python 3"""
 

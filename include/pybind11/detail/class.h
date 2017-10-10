@@ -48,7 +48,7 @@ inline PyTypeObject *make_static_property_type() {
         pybind11_fail("make_static_property_type(): error allocating type!");
 
     heap_type->ht_name = name_obj.inc_ref().ptr();
-#if PY_MAJOR_VERSION >= 3 && PY_MINOR_VERSION >= 3
+#ifdef PYBIND11_HAVE_QUALNAME
     heap_type->ht_qualname = name_obj.inc_ref().ptr();
 #endif
 
@@ -126,12 +126,16 @@ extern "C" inline int pybind11_meta_setattro(PyObject* obj, PyObject* name, PyOb
     }
 }
 
-#if PY_MAJOR_VERSION >= 3
+#if PY_MAJOR_VERSION >= 3 && !defined(PYPY_VERSION)
 /**
  * Python 3's PyInstanceMethod_Type hides itself via its tp_descr_get, which prevents aliasing
  * methods via cls.attr("m2") = cls.attr("m1"): instead the tp_descr_get returns a plain function,
  * when called on a class, or a PyMethod, when called on an instance.  Override that behaviour here
  * to do a special case bypass for PyInstanceMethod_Types.
+ *
+ * Under PyPy 3, unfortunately the `__name__`/`__doc__`/`__module__` attributes become unavailable
+ * (its PyInstanceMethod implementation doesn't provide them), which is worse than not being able to
+ * alias a method so we have to leave method aliases as an unimplemented feature.
  */
 extern "C" inline PyObject *pybind11_meta_getattro(PyObject *obj, PyObject *name) {
     PyObject *descr = _PyType_Lookup((PyTypeObject *) obj, name);
@@ -161,7 +165,7 @@ inline PyTypeObject* make_default_metaclass() {
         pybind11_fail("make_default_metaclass(): error allocating metaclass!");
 
     heap_type->ht_name = name_obj.inc_ref().ptr();
-#if PY_MAJOR_VERSION >= 3 && PY_MINOR_VERSION >= 3
+#ifdef PYBIND11_HAVE_QUALNAME
     heap_type->ht_qualname = name_obj.inc_ref().ptr();
 #endif
 
@@ -171,7 +175,7 @@ inline PyTypeObject* make_default_metaclass() {
     type->tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE | Py_TPFLAGS_HEAPTYPE;
 
     type->tp_setattro = pybind11_meta_setattro;
-#if PY_MAJOR_VERSION >= 3
+#if PY_MAJOR_VERSION >= 3 && !defined(PYPY_VERSION)
     type->tp_getattro = pybind11_meta_getattro;
 #endif
 
@@ -363,7 +367,7 @@ inline PyObject *make_object_base_type(PyTypeObject *metaclass) {
         pybind11_fail("make_object_base_type(): error allocating type!");
 
     heap_type->ht_name = name_obj.inc_ref().ptr();
-#if PY_MAJOR_VERSION >= 3 && PY_MINOR_VERSION >= 3
+#ifdef PYBIND11_HAVE_QUALNAME
     heap_type->ht_qualname = name_obj.inc_ref().ptr();
 #endif
 
@@ -504,7 +508,7 @@ inline void enable_buffer_protocol(PyHeapTypeObject *heap_type) {
 inline PyObject* make_new_python_type(const type_record &rec) {
     auto name = reinterpret_steal<object>(PYBIND11_FROM_STRING(rec.name));
 
-#if PY_MAJOR_VERSION >= 3 && PY_MINOR_VERSION >= 3
+#ifdef PYBIND11_HAVE_QUALNAME
     auto ht_qualname = name;
     if (rec.scope && hasattr(rec.scope, "__qualname__")) {
         ht_qualname = reinterpret_steal<object>(
@@ -552,7 +556,7 @@ inline PyObject* make_new_python_type(const type_record &rec) {
         pybind11_fail(std::string(rec.name) + ": Unable to create type object!");
 
     heap_type->ht_name = name.release().ptr();
-#if PY_MAJOR_VERSION >= 3 && PY_MINOR_VERSION >= 3
+#ifdef PYBIND11_HAVE_QUALNAME
     heap_type->ht_qualname = ht_qualname.release().ptr();
 #endif
 
