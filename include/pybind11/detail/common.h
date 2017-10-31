@@ -146,6 +146,19 @@
 #include <typeindex>
 #include <type_traits>
 
+#if defined(PYBIND11_CPP17)
+#  if defined(__has_include)
+#    if __has_include(<string_view>)
+#      define PYBIND11_HAS_STRING_VIEW
+#    endif
+#  elif defined(_MSC_VER)
+#    define PYBIND11_HAS_STRING_VIEW
+#  endif
+#endif
+#ifdef PYBIND11_HAS_STRING_VIEW
+#include <string_view>
+#endif
+
 #if PY_MAJOR_VERSION >= 3 /// Compatibility macros for various Python versions
 #define PYBIND11_INSTANCE_METHOD_NEW(ptr, class_) PyInstanceMethod_New(ptr)
 #define PYBIND11_INSTANCE_METHOD_CHECK PyInstanceMethod_Check

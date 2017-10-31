@@ -87,6 +87,17 @@ def test_bytes(doc):
         "bytes" if sys.version_info[0] == 3 else "str"
     )
 
+    assert m.bytes_from_cstr().decode() == "abc"
+    assert m.bytes_from_cstr_size().decode() == "abc\0def"
+
+    assert m.data_from_bytes(b'aaa\0bbb') == [7, 'aaa\0bbb', 'Zaa\0bbb']
+
+
+@pytest.mark.skipif(not hasattr(m, "has_string_view"), reason="no <string_view>")
+def test_bytes_string_view():
+    assert m.bytes_from_string_view().decode() == "zyx\0wvu"
+    assert m.string_view_from_bytes(b'ab\0c') == [4, 'ab\0c', 'Zb\0c']
+
 
 def test_capsule(capture):
     pytest.gc_collect()

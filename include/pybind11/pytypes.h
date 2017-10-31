@@ -919,8 +919,14 @@ public:
     // Allow implicit conversion:
     bytes(const std::string &s) : bytes(s.data(), s.size()) { }
 
+#ifdef PYBIND11_HAS_STRING_VIEW // requires C++17
+    // Allow implicit conversion:
+    bytes(const std::string_view &s) : bytes(s.data(), s.size()) { }
+#endif
+
     explicit bytes(const pybind11::str &s);
 
+    /// Copies the stored data into a std::string
     operator std::string() const {
         char *buffer;
         ssize_t length;
@@ -928,6 +934,30 @@ public:
             pybind11_fail("Unable to extract bytes contents!");
         return std::string(buffer, (size_t) length);
     }
+
+#ifdef PYBIND11_HAS_STRING_VIEW
+    /// Accesses the stored data (without copying); only available when compiling in C++17 mode
+    operator std::string_view() const {
+        char *buffer;
+        ssize_t length;
+        if (PYBIND11_BYTES_AS_STRING_AND_SIZE(m_ptr, &buffer, &length))
+            pybind11_fail("Unable to extract bytes contents!");
+        return std::string_view(buffer, (size_t) length);
+    }
+#endif
+
+    /// Returns a pointer to the referenced bytes buffer (without copying); the data must not be
+    /// modified.  Note that the data may contain null bytes; its length should be obtained via
+    /// `size()`.
+    const char *data() const {
+        char *buffer = PYBIND11_BYTES_AS_STRING(m_ptr);
+        if (!buffer)
+            pybind11_fail("Unable to extract bytes contents!");
+        return buffer;
+    }
+
+    /// Returns the size of the referenced bytes data.
+    size_t size() const { return (size_t) PYBIND11_BYTES_SIZE(m_ptr); }
 };
 
 inline bytes::bytes(const pybind11::str &s) {

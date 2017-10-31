@@ -65,6 +65,46 @@ TEST_SUBMODULE(pytypes, m) {
     // test_bytes
     m.def("bytes_from_string", []() { return py::bytes(std::string("foo")); });
     m.def("bytes_from_str", []() { return py::bytes(py::str("bar", 3)); });
+    m.def("bytes_from_cstr", []() { return py::bytes("abc"); });
+    m.def("bytes_from_cstr_size", []() { return py::bytes("abc\0def", 7); });
+    m.def("data_from_bytes", [](py::bytes b) {
+        const char *view1 = b.data();
+        const char *view2 = b.data();
+        py::list result;
+        result.append(b.size());
+        result.append(std::string(view1, b.size()));
+        if (b.size() > 0) {
+            char save = view1[0];
+            // We aren't supposed to change the data, but it's useful for testing and we'll restore
+            // it before Python notices:
+            const_cast<char *>(view1)[0] = 'Z';
+            result.append(std::string(view2, b.size()));
+            const_cast<char *>(view1)[0] = save;
+        }
+        return result;
+    });
+
+    // test_bytes_string_view
+#ifdef PYBIND11_HAS_STRING_VIEW
+    m.attr("has_string_view") = true;
+    m.def("bytes_from_string_view", []() { return py::bytes(std::string_view("zyx\0wvu", 7)); });
+    m.def("string_view_from_bytes", [](py::bytes b) {
+        std::string_view view1 = b;
+        std::string_view view2 = b;
+        py::list result;
+        result.append(view1.size());
+        result.append(view1);
+        if (view1.size() > 0) {
+            // We aren't supposed to change the data, but it's useful for testing and we'll restore
+            // it before Python notices:
+            char save = view1[0];
+            const_cast<char *>(view1.data())[0] = 'Z';
+            result.append(view2);
+            const_cast<char *>(view1.data())[0] = save;
+        }
+        return result;
+    });
+#endif
 
     // test_capsule
     m.def("return_capsule_with_destructor", []() {
