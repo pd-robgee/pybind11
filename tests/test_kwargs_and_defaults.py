@@ -13,9 +13,23 @@ def test_function_signatures(doc):
     assert doc(m.args_function) == "args_function(*args) -> tuple"
     assert doc(m.args_kwargs_function) == "args_kwargs_function(*args, **kwargs) -> tuple"
     assert doc(m.KWClass.foo0) == \
-        "foo0(self: m.kwargs_and_defaults.KWClass, arg0: int, arg1: float) -> None"
+        "foo0(self: m.kwargs_and_defaults.KWClass, arg0: int, arg1: float) -> float"
     assert doc(m.KWClass.foo1) == \
-        "foo1(self: m.kwargs_and_defaults.KWClass, x: int, y: float) -> None"
+        "foo1(self: m.kwargs_and_defaults.KWClass, x: int, y: float) -> float"
+    assert doc(m.KWClass.__init__) == """
+        __init__(*args, **kwargs)
+        Overloaded function.
+
+        1. __init__(self: m.kwargs_and_defaults.KWClass, s: str, i: int, d: float) -> None
+
+        Full constructor
+
+        2. __init__(self: m.kwargs_and_defaults.KWClass, d: float=3.5, i: int=123) -> None
+
+        3. __init__(self: m.kwargs_and_defaults.KWClass, s: str, extra: str='abc') -> None
+
+        String ctor
+    """
 
 
 def test_named_arguments(msg):
@@ -105,3 +119,31 @@ def test_mixed_args_and_kwargs(msg):
 
         Invoked with: 1, 2; kwargs: j=1
     """  # noqa: E501 line too long
+
+
+def test_method_args(msg):
+    a = m.KWClass(s="hi", i=42, d=0.25)
+    assert a.value == 21
+    b = m.KWClass("bye", 3, 2)
+    assert b.value == 18
+    c = m.KWClass(0.5, 1)
+    assert c.value == 3.5
+    d = m.KWClass()
+    assert d.value == 3013.5
+    e = m.KWClass("mystring")
+    assert e.value == 12
+    f = m.KWClass("mystring", "")
+    assert f.value == 0
+    g = m.KWClass("mystr", extra="foo")
+    assert g.value == 7.5
+
+    with pytest.raises(TypeError) as excinfo:
+        m.KWClass(4, 5, 6, 7)
+    assert msg(excinfo.value) == """
+        __init__(): incompatible constructor arguments. The following argument types are supported:
+            1. m.kwargs_and_defaults.KWClass(s: str, i: int, d: float)
+            2. m.kwargs_and_defaults.KWClass(d: float=3.5, i: int=123)
+            3. m.kwargs_and_defaults.KWClass(s: str, extra: str='abc')
+
+        Invoked with: 4, 5, 6, 7
+    """

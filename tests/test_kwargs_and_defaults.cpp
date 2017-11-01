@@ -63,9 +63,20 @@ TEST_SUBMODULE(kwargs_and_defaults, m) {
 //    m.def("bad_args6", [](py::args, py::args) {});
 //    m.def("bad_args7", [](py::kwargs, py::kwargs) {});
 
-    // test_function_signatures (along with most of the above)
-    struct KWClass { void foo(int, float) {} };
+    // test_method_args
+    struct KWClass {
+        KWClass(std::string s, int i, double d)
+            : value{(int) s.size() * i * d} {}
+        float foo(int i, float f) { return i*f; }
+        double value;
+    };
     py::class_<KWClass>(m, "KWClass")
+        .def(py::init<std::string, int, double>(), "Full constructor", "s"_a, "i"_a, "d"_a)
+        .def(py::init([](double d, int i) { return new KWClass("default", i, d); }),
+            "d"_a = 3.5, "i"_a = 123)
+        .def(py::init([](std::string a, const char *b) { return KWClass(a, (int) std::strlen(b), 0.5); }),
+            "String ctor", "s"_a, "extra"_a = "abc")
+        .def_readonly("value", &KWClass::value)
         .def("foo0", &KWClass::foo)
         .def("foo1", &KWClass::foo, "x"_a, "y"_a);
 }
