@@ -89,8 +89,8 @@ TEST_SUBMODULE(pytypes, m) {
     m.attr("has_string_view") = true;
     m.def("bytes_from_string_view", []() { return py::bytes(std::string_view("zyx\0wvu", 7)); });
     m.def("string_view_from_bytes", [](py::bytes b) {
-        std::string_view view1 = b;
-        std::string_view view2 = b;
+        auto view1 = static_cast<std::string_view>(b);
+        auto view2 = static_cast<std::string_view>(b);
         py::list result;
         result.append(view1.size());
         result.append(view1);

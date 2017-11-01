@@ -937,7 +937,7 @@ public:
 
 #ifdef PYBIND11_HAS_STRING_VIEW
     /// Accesses the stored data (without copying); only available when compiling in C++17 mode
-    operator std::string_view() const {
+    explicit operator std::string_view() const {
         char *buffer;
         ssize_t length;
         if (PYBIND11_BYTES_AS_STRING_AND_SIZE(m_ptr, &buffer, &length))
