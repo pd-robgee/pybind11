@@ -137,6 +137,11 @@ def test_method_args(msg):
     g = m.KWClass("mystr", extra="foo")
     assert g.value == 7.5
 
+    assert a.foo0(3, 4.5) == 13.5
+    assert b.foo1(1, 1.25) == 1.25
+    assert c.foo1(2, y=2.5) == 5
+    assert d.foo1(y=1.5, x=3) == 4.5
+
     with pytest.raises(TypeError) as excinfo:
         m.KWClass(4, 5, 6, 7)
     assert msg(excinfo.value) == """

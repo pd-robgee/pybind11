@@ -67,7 +67,7 @@ TEST_SUBMODULE(kwargs_and_defaults, m) {
     struct KWClass {
         KWClass(std::string s, int i, double d)
             : value{(int) s.size() * i * d} {}
-        float foo(int i, float f) { return i*f; }
+        float foo(int i, float f) { return (float) i * f; }
         double value;
     };
     py::class_<KWClass>(m, "KWClass")
