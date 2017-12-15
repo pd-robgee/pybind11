@@ -53,6 +53,26 @@ TEST_SUBMODULE(kwargs_and_defaults, m) {
     m.def("mixed_plus_args_kwargs_defaults", mixed_plus_both,
             py::arg("i") = 1, py::arg("j") = 3.14159);
 
+    // test_args_refcount
+    m.def("arg_refcount_h", [](py::handle h) { return h.ref_count(); });
+    m.def("arg_refcount_h", [](py::handle h, py::handle, py::handle) { return h.ref_count(); });
+    m.def("arg_refcount_o", [](py::object o) { return o.ref_count(); });
+    m.def("args_refcount", [](py::args a) {
+        py::tuple t(a.size());
+        for (size_t i = 0; i < a.size(); i++)
+            // Use raw Python API here to avoid an extra, intermediate incref on the tuple item:
+            t[i] = Py_REFCNT(PyTuple_GET_ITEM(a.ptr(), static_cast<ssize_t>(i)));
+        return t;
+    });
+    m.def("mixed_args_refcount", [](py::object o, py::args a) {
+        py::tuple t(a.size() + 1);
+        t[0] = o.ref_count();
+        for (size_t i = 0; i < a.size(); i++)
+            // Use raw Python API here to avoid an extra, intermediate incref on the tuple item:
+            t[i + 1] = Py_REFCNT(PyTuple_GET_ITEM(a.ptr(), static_cast<ssize_t>(i)));
+        return t;
+    });
+
     // pybind11 won't allow these to be bound: args and kwargs, if present, must be at the end.
     // Uncomment these to test that the static_assert is indeed working:
 //    m.def("bad_args1", [](py::args, int) {});
