@@ -49,7 +49,9 @@ def test_multiple_inheritance_mix2():
     assert mt.bar() == 4
 
 
+@pytest.unsupported_on_pypy
 def test_multiple_inheritance_python():
+    """Tests python classes inheriting from multiple registered base classes"""
 
     class MI1(m.Base1, m.Base2):
         def __init__(self, i, j):
