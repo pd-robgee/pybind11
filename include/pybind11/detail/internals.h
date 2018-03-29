@@ -9,6 +9,7 @@
 
 #pragma once
 
+#include "common.h"
 #include "../pytypes.h"
 
 NAMESPACE_BEGIN(PYBIND11_NAMESPACE)
@@ -60,6 +61,10 @@ struct overload_hash {
         return value;
     }
 };
+
+struct type_info;
+struct instance;
+struct value_and_holder;
 
 /// Internal data structure used to track registered instances and types.
 /// Whenever binary incompatible changes are made to this structure,

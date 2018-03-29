@@ -45,8 +45,25 @@ set(PYBIND11_HEADERS
   include/pybind11/detail/common.h
   include/pybind11/detail/descr.h
   include/pybind11/detail/init.h
+  include/pybind11/detail/instance.h
   include/pybind11/detail/internals.h
   include/pybind11/detail/typeid.h
+  include/pybind11/detail/typeinfo.h
+
+  include/pybind11/caster/base.h
+  include/pybind11/caster/chrono.h
+  include/pybind11/caster/complex.h
+  include/pybind11/caster/core.h
+  include/pybind11/caster/eigen.h
+  include/pybind11/caster/functional.h
+  include/pybind11/caster/holder.h
+  include/pybind11/caster/numeric.h
+  include/pybind11/caster/pytypes.h
+  include/pybind11/caster/stl.h
+  include/pybind11/caster/string.h
+  include/pybind11/caster/utility.h
+  include/pybind11/caster/void.h
+
   include/pybind11/attr.h
   include/pybind11/buffer_info.h
   include/pybind11/cast.h

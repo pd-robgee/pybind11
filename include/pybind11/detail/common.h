@@ -368,76 +368,6 @@ constexpr size_t instance_simple_holder_in_ptrs() {
     return size_in_ptrs(sizeof(std::shared_ptr<int>));
 }
 
-// Forward declarations
-struct type_info;
-struct value_and_holder;
-
-struct nonsimple_values_and_holders {
-    void **values_and_holders;
-    uint8_t *status;
-};
-
-/// The 'instance' type which needs to be standard layout (need to be able to use 'offsetof')
-struct instance {
-    PyObject_HEAD
-    /// Storage for pointers and holder; see simple_layout, below, for a description
-    union {
-        void *simple_value_holder[1 + instance_simple_holder_in_ptrs()];
-        nonsimple_values_and_holders nonsimple;
-    };
-    /// Weak references
-    PyObject *weakrefs;
-    /// If true, the pointer is owned which means we're free to manage it with a holder.
-    bool owned : 1;
-    /**
-     * An instance has two possible value/holder layouts.
-     *
-     * Simple layout (when this flag is true), means the `simple_value_holder` is set with a pointer
-     * and the holder object governing that pointer, i.e. [val1*][holder].  This layout is applied
-     * whenever there is no python-side multiple inheritance of bound C++ types *and* the type's
-     * holder will fit in the default space (which is large enough to hold either a std::unique_ptr
-     * or std::shared_ptr).
-     *
-     * Non-simple layout applies when using custom holders that require more space than `shared_ptr`
-     * (which is typically the size of two pointers), or when multiple inheritance is used on the
-     * python side.  Non-simple layout allocates the required amount of memory to have multiple
-     * bound C++ classes as parents.  Under this layout, `nonsimple.values_and_holders` is set to a
-     * pointer to allocated space of the required space to hold a sequence of value pointers and
-     * holders followed `status`, a set of bit flags (1 byte each), i.e.
-     * [val1*][holder1][val2*][holder2]...[bb...]  where each [block] is rounded up to a multiple of
-     * `sizeof(void *)`.  `nonsimple.status` is, for convenience, a pointer to the
-     * beginning of the [bb...] block (but not independently allocated).
-     *
-     * Status bits indicate whether the associated holder is constructed (&
-     * status_holder_constructed) and whether the value pointer is registered (&
-     * status_instance_registered) in `registered_instances`.
-     */
-    bool simple_layout : 1;
-    /// For simple layout, tracks whether the holder has been constructed
-    bool simple_holder_constructed : 1;
-    /// For simple layout, tracks whether the instance is registered in `registered_instances`
-    bool simple_instance_registered : 1;
-    /// If true, get_internals().patients has an entry for this object
-    bool has_patients : 1;
-
-    /// Initializes all of the above type/values/holders data (but not the instance values themselves)
-    void allocate_layout();
-
-    /// Destroys/deallocates all of the above
-    void deallocate_layout();
-
-    /// Returns the value_and_holder wrapper for the given type (or the first, if `find_type`
-    /// omitted).  Returns a default-constructed (with `.inst = nullptr`) object on failure if
-    /// `throw_if_missing` is false.
-    value_and_holder get_value_and_holder(const type_info *find_type = nullptr, bool throw_if_missing = true);
-
-    /// Bit values for the non-simple status flags
-    static constexpr uint8_t status_holder_constructed  = 1;
-    static constexpr uint8_t status_instance_registered = 2;
-};
-
-static_assert(std::is_standard_layout<instance>::value, "Internal error: `pybind11::detail::instance` is not standard layout!");
-
 /// from __cpp_future__ import (convenient aliases from C++14/17)
 #if defined(PYBIND11_CPP14) && (!defined(_MSC_VER) || _MSC_VER >= 1910)
 using std::enable_if_t;
@@ -650,6 +580,34 @@ using expand_side_effects = bool[];
 #define PYBIND11_EXPAND_SIDE_EFFECTS(PATTERN) pybind11::detail::expand_side_effects{ ((PATTERN), void(), false)..., false }
 #endif
 
+// std::is_copy_constructible isn't quite enough: it lets std::vector<T> (and similar) through when
+// T is non-copyable, but code containing such a copy constructor fails to actually compile.
+template <typename T, typename SFINAE = void> struct is_copy_constructible : std::is_copy_constructible<T> {};
+
+// Specialization for types that appear to be copy constructible but also look like stl containers
+// (we specifically check for: has `value_type` and `reference` with `reference = value_type&`): if
+// so, copy constructability depends on whether the value_type is copy constructible.
+template <typename Container> struct is_copy_constructible<Container, enable_if_t<all_of<
+        std::is_copy_constructible<Container>,
+        std::is_same<typename Container::value_type &, typename Container::reference>
+    >::value>> : is_copy_constructible<typename Container::value_type> {};
+
+#if !defined(PYBIND11_CPP17)
+// Likewise for std::pair before C++17 (which mandates that the copy constructor not exist when the
+// two types aren't themselves copy constructible).
+template <typename T1, typename T2> struct is_copy_constructible<std::pair<T1, T2>>
+    : all_of<is_copy_constructible<T1>, is_copy_constructible<T2>> {};
+#endif
+
+
+// Returns true for the fundamental string character types used by std::string and friends
+template <typename CharT> using is_std_char_type = any_of<
+    std::is_same<CharT, char>, /* std::string */
+    std::is_same<CharT, char16_t>, /* std::u16string */
+    std::is_same<CharT, char32_t>, /* std::u32string */
+    std::is_same<CharT, wchar_t> /* std::wstring */
+>;
+
 NAMESPACE_END(detail)
 
 /// C++ bindings of builtin Python exceptions
@@ -800,7 +758,4 @@ public:
 };
 
 NAMESPACE_END(detail)
-
-
-
 NAMESPACE_END(PYBIND11_NAMESPACE)
