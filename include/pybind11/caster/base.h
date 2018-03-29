@@ -440,26 +440,18 @@ protected:
     static Constructor make_move_constructor(...) { return nullptr; }
 };
 
+NAMESPACE_END(detail)
+
+NAMESPACE_BEGIN(caster)
 
 // Base type_caster template: if not specialized by a custom type caster this uses the above
 // type_caster_base, which is the right thing for custom types.
-template <typename type, typename SFINAE = void> class type_caster : public type_caster_base<type> { };
+template <typename type, typename SFINAE = void> class type_caster : public detail::type_caster_base<type> { };
 
-template <typename type> using make_caster = type_caster<intrinsic_t<type>>;
+// py::caster::make<T> gives the type_caster for T
+template <typename type> using make = type_caster<detail::intrinsic_t<type>>;
 
-// Shortcut for calling a caster's `cast_op_type` cast operator for casting a type_caster to a T
-template <typename T> typename make_caster<T>::template cast_op_type<T> cast_op(make_caster<T> &caster) {
-    return caster.operator typename make_caster<T>::template cast_op_type<T>();
-}
-template <typename T> typename make_caster<T>::template cast_op_type<typename std::add_rvalue_reference<T>::type>
-cast_op(make_caster<T> &&caster) {
-    return std::move(caster).operator
-        typename make_caster<T>::template cast_op_type<typename std::add_rvalue_reference<T>::type>();
-}
-
-#define PYBIND11_TYPE_CASTER(type, py_name) \
-    protected: \
-        type value; \
+#define PYBIND11_CASTER(type, py_name) \
     public: \
         static constexpr auto name = py_name; \
         template <typename T_, enable_if_t<std::is_same<type, remove_cv_t<T_>>::value, int> = 0> \
