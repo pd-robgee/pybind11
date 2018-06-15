@@ -56,13 +56,13 @@ matrix:
     env: PYTHON=3.5 CPP=14 GCC=6 DEBUG=1
   - sudo: true
     services: docker
-    env: PYTHON=3.6 CPP=17 GCC=7
+    env: PYTHON=3.7 CPP=17 GCC=8
   - os: linux
-    env: PYTHON=3.6 CPP=17 CLANG=5.0
+    env: PYTHON=3.6 CPP=17 CLANG=6.0
     addons:
       apt:
-        sources: [deadsnakes, llvm-toolchain-trusty-5.0, ubuntu-toolchain-r-test]
-        packages: [python3.6-dev python3.6-venv clang-5.0 llvm-5.0-dev, lld-5.0]
+        sources: [deadsnakes, llvm-toolchain-trusty-6.0, ubuntu-toolchain-r-test]
+        packages: [python3.6-dev python3.6-venv clang-6.0 llvm-6.0-dev, lld-6.0]
   - os: osx
     osx_image: xcode7.3
     env: PYTHON=2.7 CPP=14 CLANG CMAKE=1
@@ -108,7 +108,7 @@ before_install:
       export CXX=g++-$GCC CC=gcc-$GCC
     fi
     if [ "$GCC" = "6" ]; then DOCKER=${ARCH:+$ARCH/}debian:stretch
-    elif [ "$GCC" = "7" ]; then DOCKER=debian:buster EXTRA_PACKAGES+=" catch python3-distutils" DOWNLOAD_CATCH=OFF
+    elif [ "$GCC" -ge "7" ]; then DOCKER=debian:buster EXTRA_PACKAGES+=" catch python3-distutils" DOWNLOAD_CATCH=OFF
     fi
   elif [ "$TRAVIS_OS_NAME" = "osx" ]; then
     export CXX=clang++ CC=clang;
@@ -165,7 +165,7 @@ install:
         libeigen3-dev libboost-dev cmake make ${EXTRA_PACKAGES} && break; done"
   else
 
-    if [ "$CLANG" = "5.0" ]; then
+    if [ "$CLANG" = "6.0" ]; then
       if ! [ -d ~/.local/include/c++/v1 ]; then
         # Neither debian nor llvm provide a libc++ 5.0 deb; luckily it's fairly quick
         # to build, install (and cache), so do it ourselves:
